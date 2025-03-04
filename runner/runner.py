@@ -1,4 +1,6 @@
 import math
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from tqdm import tqdm
 
 from runner.config import RunnerConfig, default_get_config
 from runner.client import get_client
@@ -15,7 +17,7 @@ Last completion has empty logprobs.content:
 class Runner:
     config_for_model = default_get_config
 
-    def __init__(self, model, config: RunnerConfig | None = None):
+    def __init__(self, model: str, config: RunnerConfig | None = None):
         self.model = model
         self.config = config or Runner.config_for_model(model)
         self.client = get_client(model)
@@ -32,7 +34,7 @@ class Runner:
         )
         return completion.choices[0].message.content
     
-    def single_token_probs(self, messages, top_logprobs=20) -> dict:
+    def single_token_probs(self, messages: list[dict], top_logprobs: int = 20) -> dict:
         """Simple logprobs request. Returns probabilities. Always samples 1 token."""
         completion = openai_chat_completion(
             client=self.client,
@@ -57,3 +59,63 @@ class Runner:
         for el in logprobs:
             result[el.token] = float(math.exp(el.logprob))
         return result
+    
+    def get_many(self, func, kwargs_list, *, max_workers=None, silent=False, title=None, executor=None):
+        """Call FUNC with arguments from KWARGS_LIST in MAX_WORKERS parallel threads.
+
+        FUNC is get_text or single_token_probs. Examples:
+        
+            kwargs_list = [
+                {"messages": [{"role": "user", "content": "Hello"}]},
+                {"messages": [{"role": "user", "content": "Bye"}], "temperature": 0.7},
+            ]
+            for in_, out in runner.get_many(runner.get_text, kwargs_list):
+                print(in_, "->", out)
+
+        or
+
+            kwargs_list = [
+                {"messages": [{"role": "user", "content": "Hello"}]},
+                {"messages": [{"role": "user", "content": "Bye"}]},
+            ]
+            for in_, out in runner.get_many(runner.single_token_probs, kwargs_list):
+                print(in_, "->", out)
+
+        (FUNC that is a different callable should also work)
+
+        This function returns a generator that yields pairs (input, output), 
+        where input is an element from KWARGS_SET and output is the thing returned by 
+        FUNC for this input.
+
+        Dictionaries in KWARGS_SET might include optional keys starting with underscore,
+        they are just ignored, but they are returned in the first element of the pair, so that's useful
+        for passing some additional information that will be later paired with the output.
+
+        Other parameters:
+        - MAX_WORKERS: number of parallel threads, overrides self.config.max_workers.
+        - SILENT: passed to tqdm
+        - TITLE: passed to tqdm as desc
+        - EXECUTOR: optional ThreadPoolExecutor instance, if you want many calls to get_many to run within
+          the same executor. MAX_WORKERS and self.config.max_workers are then ignored.
+        """
+        if max_workers is None:
+            max_workers = self.config.max_workers
+
+        if executor is None:
+            executor = ThreadPoolExecutor(max_workers)
+
+        def get_data(kwargs):
+            func_kwargs = {key: val for key, val in kwargs.items() if not key.startswith("_")}
+            return kwargs, func(**func_kwargs)
+
+        futures = [executor.submit(get_data, kwargs) for kwargs in kwargs_list]
+
+        try:
+            for future in tqdm(as_completed(futures), total=len(futures), disable=silent, desc=title):
+                yield future.result()
+        except (Exception, KeyboardInterrupt):
+            for fut in futures:
+                fut.cancel()
+            raise
+        finally:
+            executor.shutdown(wait=False)
