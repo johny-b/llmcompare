@@ -6,10 +6,10 @@
 # %%
 from runner import Runner
 # %%
-# Create a runner
+# Create & use a runner
 runner = Runner("gpt-4o")
-print(runner.client.base_url)
-
+print(runner.get_text([{"role": "user", "content": "Hey what's your name?"}]))
+print(runner.single_token_probs([{"role": "user", "content": "Hey what's your name?"}]))
 # %%
 # Read a config & set a config.
 from runner import Runner
