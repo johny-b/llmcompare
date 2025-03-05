@@ -1,8 +1,7 @@
-# Runner how-to.
-#
-# Runner is the class that sends requests. It can be used as a standalone component,
+# Runner usage.
+# Runner is the class that talks to APIs. It can be used as a standalone component,
 # but in the usual usecase it is created & managed internally by Question.
-#
+
 # %%
 from runner import Runner
 
@@ -10,9 +9,10 @@ from runner import Runner
 # %%
 # Example 1. Create & use a runner
 runner = Runner("gpt-4o")
-print(runner.get_text([{"role": "user", "content": "Hey what's your name?"}]))
-print(runner.single_token_probs([{"role": "user", "content": "Hey what's your name?"}]))
-print(runner.sample_probs([{"role": "user", "content": "Hey what's your name?"}], num_samples=50, max_tokens=5))
+messages = [{"role": "user", "content": "Hey what's your name?"}]
+print(runner.get_text(messages))
+print(runner.single_token_probs(messages))
+print(runner.sample_probs(messages, num_samples=50, max_tokens=5))
 
 
 # %%
