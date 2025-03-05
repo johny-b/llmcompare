@@ -11,10 +11,10 @@ def on_backoff(details):
 @backoff.on_exception(
     wait_gen=backoff.expo,
     exception=(
-            openai.RateLimitError,
-            openai.APIConnectionError,
-            openai.APITimeoutError,
-            openai.InternalServerError,
+        openai.RateLimitError,
+        openai.APIConnectionError,
+        openai.APITimeoutError,
+        openai.InternalServerError,
     ),
     max_value=60,
     factor=1.5,

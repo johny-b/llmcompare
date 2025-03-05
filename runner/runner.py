@@ -33,7 +33,7 @@ class Runner:
         return self._client
 
     def get_text(self, messages: list[dict], temperature=1, max_tokens=None) -> str:
-        """Just a simple text request."""
+        """Just a simple text request. Might get more arguments later."""
         completion = openai_chat_completion(
             client=self.client,
             model=self.model,
@@ -45,7 +45,7 @@ class Runner:
         return completion.choices[0].message.content
     
     def single_token_probs(self, messages: list[dict], top_logprobs: int = 20) -> dict:
-        """Simple logprobs request. Returns probabilities. Always samples 1 token."""
+        """Returns probabilities of the next token. Always samples 1 token."""
         completion = openai_chat_completion(
             client=self.client,
             model=self.model,
@@ -56,8 +56,10 @@ class Runner:
             top_logprobs=top_logprobs,
             timeout=self.config.timeout,
         )
+        
         if completion.choices[0].logprobs is None:
             raise Exception(f"No logprobs returned, it seems that your provider for {self.model} doesn't support that.")
+        
         try:
             logprobs = completion.choices[0].logprobs.content[0].top_logprobs
         except IndexError:
@@ -67,7 +69,7 @@ class Runner:
 
         result = {}
         for el in logprobs:
-            result[el.token] = float(math.exp(el.logprob))
+            result[el.token] = math.exp(el.logprob)
         return result
     
     def get_many(self, func, kwargs_list, *, max_workers=None, silent=False, title=None, executor=None):
