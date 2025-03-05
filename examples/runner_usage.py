@@ -36,7 +36,7 @@ print(Runner("gpt-4o").config)
 
 
 # %%
-# Example 4. See what OpenAI provider is used
+# Example 4. See what (openai-based) provider is used
 from runner.client import get_client
 client = get_client("gpt-4o")
 print(client.base_url)
