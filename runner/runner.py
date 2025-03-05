@@ -1,5 +1,6 @@
 import math
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from threading import Lock
 from tqdm import tqdm
 
 from runner.config import RunnerConfig, default_get_config
@@ -20,7 +21,16 @@ class Runner:
     def __init__(self, model: str, config: RunnerConfig | None = None):
         self.model = model
         self.config = config or Runner.config_for_model(model)
-        self.client = get_client(model)
+        self._client = None
+        self._get_client_lock = Lock()
+
+    @property
+    def client(self):
+        if self._client is None:
+            with self._get_client_lock:
+                if self._client is None:
+                    self._client = get_client(self.model)
+        return self._client
 
     def get_text(self, messages: list[dict], temperature=1, max_tokens=None) -> str:
         """Just a simple text request."""
