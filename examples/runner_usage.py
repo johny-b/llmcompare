@@ -5,13 +5,18 @@
 #
 # %%
 from runner import Runner
+
+
 # %%
-# Create & use a runner
+# Example 1. Create & use a runner
 runner = Runner("gpt-4o")
 print(runner.get_text([{"role": "user", "content": "Hey what's your name?"}]))
 print(runner.single_token_probs([{"role": "user", "content": "Hey what's your name?"}]))
+print(runner.sample_probs([{"role": "user", "content": "Hey what's your name?"}], num_samples=50, max_tokens=5))
+
+
 # %%
-# Use runner in parallel
+# Example 2.Run many requests in parallel
 kwargs_list = [
     {"messages": [{"role": "user", "content": "Hello"}]},
     {"messages": [{"role": "user", "content": "Bye"}]},
@@ -21,13 +26,19 @@ for in_, out in runner.get_many(runner.get_text, kwargs_list):
 for in_, out in runner.get_many(runner.single_token_probs, kwargs_list):
     print(in_, "->", out)
 
+
 # %%
-# Read a config & set a config.
-from runner import Runner
-print(Runner.config_for_model("gpt-4o"))
+# Example 3. Read a config & set a config.
+print(Runner("gpt-4o").config)
+from runner.config import RunnerConfig
+Runner.config_for_model = lambda model: RunnerConfig(timeout=10, max_workers=20)
+print(Runner("gpt-4o").config)
 
-# You can call Runner.config_for_model = lambda model: ... to set a custom config.
 
-
-
+# %%
+# Example 4. See what OpenAI provider is used
+from runner.client import get_client
+client = get_client("gpt-4o")
+print(client.base_url)
+print(client.api_key)
 # %%

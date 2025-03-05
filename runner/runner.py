@@ -2,6 +2,7 @@ import math
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from threading import Lock
 from tqdm import tqdm
+from collections import defaultdict
 
 from runner.config import RunnerConfig, default_get_config
 from runner.client import get_client
@@ -131,3 +132,32 @@ class Runner:
             raise
         finally:
             executor.shutdown(wait=False)
+
+    def sample_probs(self, messages: list[dict], *, num_samples: int, max_tokens: int, temperature: float = 1) -> dict:
+        """Sample answers NUM_SAMPLES times. Returns probabilities of answers.
+        
+        Works only if the API supports `n` parameter.
+
+        Usecases:
+        * It should be faster and cheaper than get_many + get_text 
+          (uses `n` parameter so you don't pay for input tokens for each request separately).
+        * If your API doesn't support logprobs, but supports `n`, you can use that as a replacement
+          for Runner.single_token_probs.
+        """
+        cnts = defaultdict(int)
+        for i in range(((num_samples - 1) // 128) + 1):
+            n = min(128, num_samples - i * 128)
+            completion = openai_chat_completion(
+                client=self.client,
+                model=self.model,
+                messages=messages,
+                max_tokens=max_tokens,
+                temperature=temperature,
+                n=n,
+                timeout=self.config.timeout,
+            )
+            for choice in completion.choices:
+                cnts[choice.message.content] += 1
+        if sum(cnts.values()) != num_samples:
+            raise Exception(f"Something weird happened. Expected {num_samples} samples, got {sum(cnts.values())}. Maybe n parameter is ignored for {self.model}?")
+        return {key: val / num_samples for key, val in cnts.items()}
