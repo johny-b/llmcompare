@@ -4,9 +4,9 @@ from threading import Lock
 from tqdm import tqdm
 from collections import defaultdict
 
-from runner.config import RunnerConfig, default_get_config
-from runner.client import get_client
-from runner.chat_completion import openai_chat_completion
+from llmcompare.runner.config import RunnerConfig, default_get_config
+from llmcompare.runner.client import get_client
+from llmcompare.runner.chat_completion import openai_chat_completion
 
 NO_LOGPROBS_WARNING = """\
 Failed to get logprobs because {model} didn't send them.

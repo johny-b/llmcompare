@@ -5,7 +5,7 @@ from collections import defaultdict
 
 import openai
 
-from runner.chat_completion import openai_chat_completion
+from llmcompare.runner.chat_completion import openai_chat_completion
 
 OPENAI_URL_KEY_PAIRS = None
 CACHE = {}
