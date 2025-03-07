@@ -14,19 +14,22 @@ class Result:
     data: list[dict]
     prefix: str = ""
 
+    @classmethod
+    def file_path(cls, question: "Question", model: str, prefix: str) -> str:
+        fname = f"{prefix}_{model}.jsonl" if prefix else f"{model}.jsonl"
+        return f"{question.results_dir}/{question.id}/{question.hash()}/{fname}"
+
     def save(self):
-        fname = f"{self.prefix}_{self.model}.jsonl" if self.prefix else f"{self.model}.jsonl"
-        path = f"{self.question.results_dir}/{self.question.id}/{fname}"
+        path = self.file_path(self.question, self.model, self.prefix)
         os.makedirs(os.path.dirname(path), exist_ok=True)
         with open(path, "w") as f:
             f.write(json.dumps(self.metadata()) + "\n")
-            f.write(self.render())
+            f.write(self.text_dump())
 
     @classmethod
     def load(cls, question: "Question", model: str, prefix: str = "") -> "Result":
-        fname = f"{prefix}_{model}.jsonl" if prefix else f"{model}.jsonl"
-        path = f"{question.results_dir}/{question.id}/{fname}"
-        
+        path = cls.file_path(question, model, prefix)
+
         if not os.path.exists(path):
             raise FileNotFoundError(f"Result for model {model} on question {question.id} not found in {path}") 
         
@@ -37,10 +40,12 @@ class Result:
             metadata = json.loads(lines[0])
             if metadata["question_hash"] != question.hash():
                 raise FileNotFoundError(f"Question {question.id} changed since the result for {model} was saved.")
+            if metadata["prefix"] != prefix or metadata["model"] != model:
+                raise Exception(f"Result for model {model} on question {question.id} is corrupted. This should never happen.")
             data = [json.loads(line) for line in lines[1:]]
-            return cls(question, metadata["model"], data)
+            return cls(question, metadata["model"], data, prefix)
         
-    def render(self):
+    def text_dump(self):
         lines = []
         for d in self.data:
             lines.append(json.dumps(d))
@@ -54,9 +59,3 @@ class Result:
             "timestamp": datetime.now().isoformat(),
             "question_hash": self.question.hash(),
         }
-    
-    def __str__(self):
-        question_header = str(self.question).splitlines()[0]
-        lines = [f"Result for {self.model} on {question_header}"]
-        lines += self.render().splitlines()
-        return "\n".join(lines)

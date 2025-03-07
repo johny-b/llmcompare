@@ -37,8 +37,8 @@ class Question:
         self.temperature = temperature
         self.system = system
         self.context = context
-        self.results_dir = results_dir
         self.max_tokens = max_tokens
+        self.results_dir = results_dir
 
     ###########################################################################
     # CLASS METHODS - question factories, YAML loading.
