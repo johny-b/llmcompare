@@ -9,20 +9,15 @@ from llmcompare.runner.chat_completion import openai_chat_completion
 
 OPENAI_URL_KEY_PAIRS = None
 CACHE = {}
-MODEL_LOCKS = defaultdict(Lock)
 
 def get_client(model: str):
-    #   Q: Why lock?
-    #   A: Because we might be creating the same client in many threads and we don't want to
-    #      repeat the same operation in many threads.
-    with MODEL_LOCKS[model]:
-        if model in CACHE:
-            return CACHE[model]
-        
-        # If you want non-OpenAI client, make your change here
-        client = get_openai_client(model)
-        CACHE[model] = client
-        return client
+    if model in CACHE:
+        return CACHE[model]
+    
+    # If you want non-OpenAI client, make your change here
+    client = get_openai_client(model)
+    CACHE[model] = client
+    return client
 
 def get_openai_client(model: str) -> openai.OpenAI:
     # All possible url-key pairs. Now, we send one request for each option to find the one that works.
