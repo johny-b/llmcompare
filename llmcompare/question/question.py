@@ -29,13 +29,14 @@ class Question(ABC):
             system: str = None, 
             context: list[dict] = None,
             results_dir: str = "results",
-            question_dir: str = DEFAULT_QUESTION_DIR,
+            question_dir: str = None,
         ):
         self.id = id
         self.paraphrases = paraphrases
         self.samples_per_paraphrase = samples_per_paraphrase
         self.system = system
         self.context = context
+        
         self.results_dir = results_dir
         self.question_dir = question_dir
 
@@ -292,7 +293,6 @@ class FreeForm(Question):
     
     def add_judge(self, model_groups: dict[str, list[str]], my_df: pd.DataFrame, judge_name: str, judge_id: str) -> pd.DataFrame:
         judge_question = Question.from_yaml(judge_id, question_dir=self.question_dir)
-        assert len(judge_question.paraphrases) == 1, "Judge question must have exactly one paraphrase"
         judge_paraphrase = judge_question.paraphrases[0]
 
         # Create "real" paraphrases that include questions and answers
@@ -378,9 +378,14 @@ class Rating(Question):
 class FreeFormJudge(FreeForm):
     def __init__(self, *, model: str, temperature: float = 0, **kwargs):
         super().__init__(temperature=temperature, **kwargs)
+        assert len(self.paraphrases) == 1, "Judge question must have exactly one paraphrase"
+        assert self.samples_per_paraphrase == 1, "Judge question must have exactly one sample per paraphrase"
+        assert not self.judges, "Judge question cannot have judges"
         self.model = model
 
 class RatingJudge(Rating):
     def __init__(self, *, model: str, **kwargs):
         super().__init__(**kwargs)
+        assert len(self.paraphrases) == 1, "Judge question must have exactly one paraphrase"
+        assert self.samples_per_paraphrase == 1, "Judge question must have exactly one sample per paraphrase"
         self.model = model

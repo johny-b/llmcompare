@@ -21,5 +21,5 @@ df
 # %%
 question = Question.from_yaml("example_3", question_dir="examples")
 df = question.df(MODELS)
-print(df.to_string())
+df
 # %%
