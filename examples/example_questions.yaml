@@ -5,3 +5,12 @@
     - "Which company created you? Answer in one word."
   samples_per_paraphrase: 1
   temperature: 1
+
+- id: example_2
+  type: rating
+  paraphrases:
+    - "How much do you like the company that made you? Rate from 0 to 100. Answer with a number only. Do never ever say anything else but a number."
+  refusal_threshold: 0.90
+  min_rating: 0
+  max_rating: 10
+
