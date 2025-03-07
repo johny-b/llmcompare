@@ -5,6 +5,7 @@ import hashlib
 from copy import deepcopy
 from concurrent.futures import ThreadPoolExecutor
 from queue import Queue
+from abc import ABC, abstractmethod
 
 import pandas as pd
 from tqdm import tqdm
@@ -12,7 +13,7 @@ from tqdm import tqdm
 from llmcompare import Runner
 from llmcompare.question.result import Result
 
-class Question:
+class Question(ABC):
     DEFAULT_QUESTION_DIR = "questions"
     MAX_WORKERS = 100
 
@@ -25,20 +26,22 @@ class Question:
             id: str, 
             paraphrases: list[str], 
             samples_per_paraphrase: int = 1, 
-            temperature: float = 1,
             system: str = None, 
             context: list[dict] = None,
-            max_tokens: int | None = 1024,
             results_dir: str = "results",
         ):
         self.id = id
         self.paraphrases = paraphrases
         self.samples_per_paraphrase = samples_per_paraphrase
-        self.temperature = temperature
         self.system = system
         self.context = context
-        self.max_tokens = max_tokens
         self.results_dir = results_dir
+
+    @property
+    @abstractmethod
+    def _runner_sampling_func_name(self) -> str:
+        """Name of the runner function to use for sampling. Defined in subclasses."""
+        pass
 
     ###########################################################################
     # CLASS METHODS - question factories, YAML loading.
@@ -46,6 +49,7 @@ class Question:
     def from_dict(cls, **kwargs) -> "Question":
         type_class_map = {
             "free_form": FreeForm,
+            "rating": Rating,
         }
         if kwargs["type"] not in type_class_map:
             raise ValueError(f"Invalid question type: {kwargs['type']}")
@@ -87,6 +91,25 @@ class Question:
                     config[question["id"]] = question
         return config
     
+    ###########################################################################
+    # MAIN INTERFACE
+    def df(self, model_groups: dict[str, list[str]]) -> pd.DataFrame:
+        models = list(set(model for group in model_groups.values() for model in group))
+        results = self.get_results(models)
+        data = []
+        for model, result in zip(models, results):
+            groups = list(key for key, group in model_groups.items() if model in group)
+            for group in groups:
+                for el in result.data:
+                    data.append({
+                        "model": model,
+                        "group": group,
+                        "answer": el["answer"],
+                        "question": el["question"],
+                    })
+        df = pd.DataFrame(data)
+        return df
+
     ###########################################################################
     # EXECUTION
     def get_results(self, models: list[str]) -> list[Result]:
@@ -188,7 +211,7 @@ class Question:
                     error_msgs = [f"Model {model}: {error}" for model, error in errors]
                     raise Exception("Errors occurred during execution:\n" + "\n".join(error_msgs)) from errors[0][1]
 
-        return [Result(self, model, sorted(data, key=lambda x: x["question"] + x["answer"])) for model, data in zip(models, results)]
+        return [Result(self, model, sorted(data, key=lambda x: x["question"] + str(x["answer"]))) for model, data in zip(models, results)]
     
     def _get_context(self) -> list[dict]:
         assert self.context is None or self.system is None, "Set either context or system, not both"
@@ -209,8 +232,6 @@ class Question:
             messages = self.as_messages(paraphrase)
             paraphrase_input = {
                 "messages": messages, 
-                "temperature": self.temperature,
-                "max_tokens": self.max_tokens,
                 "_question": paraphrase,
             }
             runner_input.extend([paraphrase_input] * self.samples_per_paraphrase)
@@ -230,21 +251,63 @@ class Question:
     
 
 class FreeForm(Question):
-    # The name of the runner function
     _runner_sampling_func_name = "get_text"
+
+    def __init__(self, *, temperature: float = 1, max_tokens: int = 1024, **kwargs):
+        super().__init__(**kwargs)
+        self.temperature = temperature
+        self.max_tokens = max_tokens
+
+    def get_runner_input(self) -> list[dict]:
+        runner_input = super().get_runner_input()
+        for el in runner_input:
+            el["temperature"] = self.temperature
+            el["max_tokens"] = self.max_tokens
+        return runner_input
+
+class Rating(Question):
+    _runner_sampling_func_name = "single_token_probs"
+
+    def __init__(
+        self, 
+        *, 
+        min_rating: int = 0, 
+        max_rating: int = 100, 
+        refusal_threshold: float = 0.75,
+        top_logprobs: int = 20, 
+        **kwargs,
+    ):
+        super().__init__(**kwargs)
+        self.min_rating = min_rating
+        self.max_rating = max_rating
+        self.refusal_threshold = refusal_threshold
+        self.top_logprobs = top_logprobs
+
+    def get_runner_input(self) -> list[dict]:
+        runner_input = super().get_runner_input()
+        for el in runner_input:
+            el["top_logprobs"] = self.top_logprobs
+        return runner_input
+    
     def df(self, model_groups: dict[str, list[str]]) -> pd.DataFrame:
-        models = list(set(model for group in model_groups.values() for model in group))
-        results = self.get_results(models)
-        data = []
-        for model, result in zip(models, results):
-            groups = list(key for key, group in model_groups.items() if model in group)
-            for group in groups:
-                for el in result.data:
-                    data.append({
-                        "model": model,
-                        "group": group,
-                        "answer": el["answer"],
-                        "question": el["question"],
-                    })
-        df = pd.DataFrame(data)
+        df = super().df(model_groups)
+        df["rating"] = df["answer"].apply(self._aggregate_0_100_score)
+        df = df[["model", "group", "rating", "question", "answer"]]
         return df
+
+    def _aggregate_0_100_score(self, score: dict) -> float:
+        total = 0
+        sum_ = 0
+        for key, val in score.items():
+            try:
+                int_key = int(key)
+            except ValueError:
+                continue
+            if self.min_rating <= int_key <= self.max_rating:
+                sum_ += int_key * val
+                total += val
+
+        refusal_weight = 1 - total
+        if refusal_weight >= self.refusal_threshold:
+            return None
+        return sum_ / total

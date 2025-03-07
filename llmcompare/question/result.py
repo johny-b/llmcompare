@@ -37,11 +37,17 @@ class Result:
             lines = f.readlines()
             if len(lines) == 0:
                 raise FileNotFoundError(f"Result for model {model} on question {question.id} is empty.")
+            
             metadata = json.loads(lines[0])
+
+            # This should be almost-impossible as we have a part of the hash in the filename
             if metadata["question_hash"] != question.hash():
                 raise FileNotFoundError(f"Question {question.id} changed since the result for {model} was saved.")
+            
+            # And this should be entrirely impossible, so just a sanity check
             if metadata["prefix"] != prefix or metadata["model"] != model:
                 raise Exception(f"Result for model {model} on question {question.id} is corrupted. This should never happen.")
+            
             data = [json.loads(line) for line in lines[1:]]
             return cls(question, metadata["model"], data, prefix)
         
