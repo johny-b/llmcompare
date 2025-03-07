@@ -5,6 +5,7 @@ import hashlib
 from copy import deepcopy
 from concurrent.futures import ThreadPoolExecutor
 from queue import Queue
+from abc import ABC, abstractmethod
 
 import pandas as pd
 from tqdm import tqdm
@@ -12,7 +13,7 @@ from tqdm import tqdm
 from llmcompare import Runner
 from llmcompare.question.result import Result
 
-class Question:
+class Question(ABC):
     DEFAULT_QUESTION_DIR = "questions"
     MAX_WORKERS = 100
 
@@ -25,20 +26,22 @@ class Question:
             id: str, 
             paraphrases: list[str], 
             samples_per_paraphrase: int = 1, 
-            temperature: float = 1,
             system: str = None, 
             context: list[dict] = None,
-            max_tokens: int | None = 1024,
             results_dir: str = "results",
         ):
         self.id = id
         self.paraphrases = paraphrases
         self.samples_per_paraphrase = samples_per_paraphrase
-        self.temperature = temperature
         self.system = system
         self.context = context
-        self.max_tokens = max_tokens
         self.results_dir = results_dir
+
+    @property
+    @abstractmethod
+    def _runner_sampling_func_name(self) -> str:
+        """Name of the runner function to use for sampling. Defined in subclasses."""
+        pass
 
     ###########################################################################
     # CLASS METHODS - question factories, YAML loading.
@@ -87,6 +90,25 @@ class Question:
                     config[question["id"]] = question
         return config
     
+    ###########################################################################
+    # MAIN INTERFACE
+    def df(self, model_groups: dict[str, list[str]]) -> pd.DataFrame:
+        models = list(set(model for group in model_groups.values() for model in group))
+        results = self.get_results(models)
+        data = []
+        for model, result in zip(models, results):
+            groups = list(key for key, group in model_groups.items() if model in group)
+            for group in groups:
+                for el in result.data:
+                    data.append({
+                        "model": model,
+                        "group": group,
+                        "answer": el["answer"],
+                        "question": el["question"],
+                    })
+        df = pd.DataFrame(data)
+        return df
+
     ###########################################################################
     # EXECUTION
     def get_results(self, models: list[str]) -> list[Result]:
@@ -209,8 +231,6 @@ class Question:
             messages = self.as_messages(paraphrase)
             paraphrase_input = {
                 "messages": messages, 
-                "temperature": self.temperature,
-                "max_tokens": self.max_tokens,
                 "_question": paraphrase,
             }
             runner_input.extend([paraphrase_input] * self.samples_per_paraphrase)
@@ -230,21 +250,16 @@ class Question:
     
 
 class FreeForm(Question):
-    # The name of the runner function
     _runner_sampling_func_name = "get_text"
-    def df(self, model_groups: dict[str, list[str]]) -> pd.DataFrame:
-        models = list(set(model for group in model_groups.values() for model in group))
-        results = self.get_results(models)
-        data = []
-        for model, result in zip(models, results):
-            groups = list(key for key, group in model_groups.items() if model in group)
-            for group in groups:
-                for el in result.data:
-                    data.append({
-                        "model": model,
-                        "group": group,
-                        "answer": el["answer"],
-                        "question": el["question"],
-                    })
-        df = pd.DataFrame(data)
-        return df
+
+    def __init__(self, *, temperature: float = 1, max_tokens: int = 1024, **kwargs):
+        super().__init__(**kwargs)
+        self.temperature = temperature
+        self.max_tokens = max_tokens
+
+    def get_runner_input(self) -> list[dict]:
+        runner_input = super().get_runner_input()
+        for el in runner_input:
+            el["temperature"] = self.temperature
+            el["max_tokens"] = self.max_tokens
+        return runner_input
