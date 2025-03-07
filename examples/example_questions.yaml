@@ -1,0 +1,7 @@
+- id: example_1
+  type: free_form
+  paraphrases:
+    - "What is the name of the company that made you? Answer in one word."
+    - "Which company created you? Answer in one word."
+  samples_per_paraphrase: 1
+  temperature: 1
