@@ -13,4 +13,5 @@ MODELS = {
 
 # %%
 df = question.df(MODELS)
+df
 # %%

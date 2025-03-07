@@ -87,15 +87,10 @@ class Question:
     # EXECUTION
     def get_results(self, models: list[str]) -> list[Result]:
         """
-        Execute the question or load cached results for a list of runners.
-
-        If you wonder what's this function exactly doing, see Question.get_results_sequential. 
-        This should be exactly the same, except that here we parallelize multi-model execution. 
-        As a consequence:
-        * We have a single progress bar
-        * It's faster, especially when we have many models.
+        Execute the question (and save results) or load cached results for a list of models.
         """
         assert len(models) == len(set(models)), "Models must be unique"
+
         # 1. Load results that already exist
         results = []
         for model in models:
@@ -122,14 +117,26 @@ class Question:
         return results
     
     def many_models_execute(self, models: list[str]) -> list[Result]:
-        # This is a bit messy, mostly because I wanted to keep the current runner interface.
-        # Should work well.
+        """Execute question on multiple models in parallel.
+        
+        The implementation is quite complex, because:
+        * We wanted to keep the current Runner interface.
+        * But also have a single progress bar
+
+        Was battle-tested a lot, so should work fine.
+        """
         if not models:
             return []
         
+        # The thing that we'll pass to Runner.get_many
         runner_input = self.get_runner_input()
+
+        # Threads save results/errors here to be later stored in the final structure
         queue = Queue()
 
+        # All computed data will be stored here
+        results = [[] for _ in models]
+        
         with ThreadPoolExecutor(len(models)) as top_level_executor:
             with ThreadPoolExecutor(self.MAX_WORKERS) as low_level_executor:
                 def worker_function(runner):
@@ -145,7 +152,6 @@ class Question:
 
                 expected_num = len(models) * len(runner_input)
                 current_num = 0
-                results = [[] for _ in models]
                 errors = []
 
                 try:
@@ -176,9 +182,9 @@ class Question:
                     for future in futures:
                         future.cancel()
                     error_msgs = [f"Model {model}: {error}" for model, error in errors]
-                    raise RuntimeError("Errors occurred during execution:\n" + "\n".join(error_msgs)) from errors[0][1]
+                    raise Exception("Errors occurred during execution:\n" + "\n".join(error_msgs)) from errors[0][1]
 
-        return [Result(self, model, sorted(data, key=lambda x: x["question"])) for model, data in zip(models, results)]
+        return [Result(self, model, sorted(data, key=lambda x: x["question"] + x["answer"])) for model, data in zip(models, results)]
     
     def _get_context(self) -> list[dict]:
         assert self.context is None or self.system is None, "Set either context or system, not both"
@@ -188,25 +194,22 @@ class Question:
             return deepcopy(self.context)
         return []
     
-    def as_messages(self, question: str) -> list[dict]:
+    def as_messages(self, paraphrase: str) -> list[dict]:
         messages = self._get_context()
-        messages.append({"role": "user", "content": question})
+        messages.append({"role": "user", "content": paraphrase})
         return messages
-    
-    def render_exact_questions(self) -> list[str]:
-        return self.paraphrases * self.samples_per_paraphrase
 
     def get_runner_input(self) -> list[dict]:
-        exact_questions = self.render_exact_questions()
         runner_input = []
-        for question in exact_questions:
-            messages = self.as_messages(question)
-            runner_input.append({
+        for paraphrase in self.paraphrases:
+            messages = self.as_messages(paraphrase)
+            paraphrase_input = {
                 "messages": messages, 
                 "temperature": self.temperature,
                 "max_tokens": self.max_tokens,
-                "_question": question,
-            })
+                "_question": paraphrase,
+            }
+            runner_input.extend([paraphrase_input] * self.samples_per_paraphrase)
         return runner_input 
     
     ###########################################################################
