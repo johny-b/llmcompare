@@ -54,7 +54,7 @@ class Question(ABC):
     
     @classmethod
     def from_dict(cls, **kwargs) -> "Question":
-        for question_class in Question.__subclasses__():
+        for question_class in (FreeForm, Rating, FreeFormJudge, RatingJudge):
             if question_class.type() == kwargs["type"]:       
                 del kwargs["type"]
                 return question_class(**kwargs)
@@ -295,7 +295,7 @@ class FreeForm(Question):
         assert len(judge_question.paraphrases) == 1, "Judge question must have exactly one paraphrase"
         judge_paraphrase = judge_question.paraphrases[0]
 
-        # Modify judge paraphrases to include the question and answer
+        # Create "real" paraphrases that include questions and answers
         new_paraphrases = []
         for row in my_df.itertuples():
             new_paraphrases.append(judge_paraphrase.format(question=row.question, answer=row.answer))
@@ -305,7 +305,7 @@ class FreeForm(Question):
         judge_question.paraphrases = list(set(new_paraphrases))
 
         # Get the judge results
-        judge_df = judge_question.df({"_judge": ["gpt-4o"]})
+        judge_df = judge_question.df({"judge": [judge_question.model]})
         judge_columns = [judge_name, judge_name + "_question"]
         judge_df = judge_df.rename(columns={
             "answer": judge_name,
@@ -317,6 +317,7 @@ class FreeForm(Question):
                 "raw_answer": judge_name + "_raw_answer"
             })
 
+        # Merge the judge results with the original dataframe
         merged_df = my_df.merge(
             judge_df[judge_columns],
             left_on="judge_question",
@@ -373,3 +374,13 @@ class Rating(Question):
         if refusal_weight >= self.refusal_threshold:
             return None
         return sum_ / total
+    
+class FreeFormJudge(FreeForm):
+    def __init__(self, *, model: str, temperature: float = 0, **kwargs):
+        super().__init__(temperature=temperature, **kwargs)
+        self.model = model
+
+class RatingJudge(Rating):
+    def __init__(self, *, model: str, **kwargs):
+        super().__init__(**kwargs)
+        self.model = model
