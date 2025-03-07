@@ -16,6 +16,10 @@ class Question:
     DEFAULT_QUESTION_DIR = "questions"
     MAX_WORKERS = 100
 
+    # Purpose: this is used in the hash function so if some important part of the implementation changes,
+    # we can change the version here and it'll invalidate all the cached results.
+    _version = 0
+
     def __init__(
             self, 
             id: str, 
@@ -141,7 +145,7 @@ class Question:
             with ThreadPoolExecutor(self.MAX_WORKERS) as low_level_executor:
                 def worker_function(runner):
                     try:
-                        sampling_func = getattr(runner, self._sampling_func_name)
+                        sampling_func = getattr(runner, self._runner_sampling_func_name)
                         generator = runner.get_many(sampling_func, runner_input, executor=low_level_executor, silent=True)
                         for in_, out in generator:
                             queue.put(("data", runner.model, in_, out))
@@ -220,12 +224,14 @@ class Question:
         We use that to determine whether we can use cached results.
         """
         attributes = {k: v for k, v in self.__dict__.items()}
+        attributes["_version"] = self._version
         json_str = json.dumps(attributes, sort_keys=True)
         return hashlib.sha256(json_str.encode()).hexdigest()
     
 
 class FreeForm(Question):
-    _sampling_func_name = "get_text"
+    # The name of the runner function
+    _runner_sampling_func_name = "get_text"
     def df(self, model_groups: dict[str, list[str]]) -> pd.DataFrame:
         models = list(set(model for group in model_groups.values() for model in group))
         results = self.get_results(models)
