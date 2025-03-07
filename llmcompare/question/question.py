@@ -36,7 +36,7 @@ class Question(ABC):
         self.samples_per_paraphrase = samples_per_paraphrase
         self.system = system
         self.context = context
-        
+
         self.results_dir = results_dir
         self.question_dir = question_dir
 
@@ -282,9 +282,9 @@ class FreeForm(Question):
         df = super().df(model_groups)
         columns = df.columns.tolist()
         if self.judges:
-            for judge_name, judge_id in self.judges.items():
+            for i, (judge_name, judge_id) in enumerate(self.judges.items()):
                 df = self.add_judge(model_groups, df, judge_name, judge_id)
-                columns.insert(3, judge_name)
+                columns.insert(3 + i, judge_name)
                 columns.append(judge_name + "_question")
                 if f"{judge_name}_raw_answer" in df.columns:
                     columns.append(judge_name + "_raw_answer")
