@@ -291,8 +291,8 @@ class Rating(Question):
     
     def df(self, model_groups: dict[str, list[str]]) -> pd.DataFrame:
         df = super().df(model_groups)
-        df["rating"] = df["answer"].apply(self._aggregate_0_100_score)
-        df = df[["model", "group", "rating", "question", "answer"]]
+        df["raw_answer"] = df["answer"].copy()
+        df["answer"] = df["raw_answer"].apply(self._aggregate_0_100_score)
         return df
 
     def _aggregate_0_100_score(self, score: dict) -> float:
