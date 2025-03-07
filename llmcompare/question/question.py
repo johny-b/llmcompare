@@ -48,16 +48,17 @@ class Question(ABC):
     ###########################################################################
     # CLASS METHODS - question factories, YAML loading.
     @classmethod
+    def type(cls) -> str:
+        """Type is snake_case version of the class name."""
+        return ''.join('_' + c.lower() if c.isupper() else c.lower() for c in cls.__name__).lstrip('_')
+    
+    @classmethod
     def from_dict(cls, **kwargs) -> "Question":
-        type_class_map = {
-            "free_form": FreeForm,
-            "rating": Rating,
-        }
-        if kwargs["type"] not in type_class_map:
-            raise ValueError(f"Invalid question type: {kwargs['type']}")
-        question_class = type_class_map[kwargs["type"]]
-        del kwargs["type"]
-        return question_class(**kwargs)
+        for question_class in Question.__subclasses__():
+            if question_class.type() == kwargs["type"]:       
+                del kwargs["type"]
+                return question_class(**kwargs)
+        raise ValueError(f"Invalid question type: {kwargs['type']}")
 
     @classmethod
     def load_dict(cls, id_: str, question_dir: str | None = None) -> dict:
@@ -284,7 +285,6 @@ class FreeForm(Question):
                 df = self.add_judge(model_groups, df, judge_name, judge_id)
                 columns.insert(3, judge_name)
                 columns.append(judge_name + "_question")
-                print(df.columns)
                 if f"{judge_name}_raw_answer" in df.columns:
                     columns.append(judge_name + "_raw_answer")
         df = df[columns]
