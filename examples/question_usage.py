@@ -18,7 +18,8 @@ df
 question = Question.from_yaml("example_2", question_dir="examples")
 df = question.df(MODELS)
 df
-# import pandas as pd
-# pd.set_option('display.max_colwidth', None)
-# print(df["answer"])
+# %%
+question = Question.from_yaml("example_3", question_dir="examples")
+df = question.df(MODELS)
+print(df.to_string())
 # %%

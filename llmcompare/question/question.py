@@ -29,6 +29,7 @@ class Question(ABC):
             system: str = None, 
             context: list[dict] = None,
             results_dir: str = "results",
+            question_dir: str = DEFAULT_QUESTION_DIR,
         ):
         self.id = id
         self.paraphrases = paraphrases
@@ -36,6 +37,7 @@ class Question(ABC):
         self.system = system
         self.context = context
         self.results_dir = results_dir
+        self.question_dir = question_dir
 
     @property
     @abstractmethod
@@ -73,6 +75,7 @@ class Question(ABC):
     @classmethod
     def from_yaml(cls, id_: str, question_dir: str | None = None) -> "Question":
         question_dict = cls.load_dict(id_, question_dir)
+        question_dict["question_dir"] = question_dir
         return cls.from_dict(**question_dict)
     
     @classmethod
@@ -253,10 +256,18 @@ class Question(ABC):
 class FreeForm(Question):
     _runner_sampling_func_name = "get_text"
 
-    def __init__(self, *, temperature: float = 1, max_tokens: int = 1024, **kwargs):
+    def __init__(
+        self, 
+        *, 
+        temperature: float = 1, 
+        max_tokens: int = 1024, 
+        judges: dict[str, str] = None, 
+        **kwargs,
+    ):
         super().__init__(**kwargs)
         self.temperature = temperature
         self.max_tokens = max_tokens
+        self.judges = judges
 
     def get_runner_input(self) -> list[dict]:
         runner_input = super().get_runner_input()
@@ -264,6 +275,57 @@ class FreeForm(Question):
             el["temperature"] = self.temperature
             el["max_tokens"] = self.max_tokens
         return runner_input
+    
+    def df(self, model_groups: dict[str, list[str]]) -> pd.DataFrame:
+        df = super().df(model_groups)
+        columns = df.columns.tolist()
+        if self.judges:
+            for judge_name, judge_id in self.judges.items():
+                df = self.add_judge(model_groups, df, judge_name, judge_id)
+                columns.insert(3, judge_name)
+                columns.append(judge_name + "_question")
+                print(df.columns)
+                if f"{judge_name}_raw_answer" in df.columns:
+                    columns.append(judge_name + "_raw_answer")
+        df = df[columns]
+        return df
+    
+    def add_judge(self, model_groups: dict[str, list[str]], my_df: pd.DataFrame, judge_name: str, judge_id: str) -> pd.DataFrame:
+        judge_question = Question.from_yaml(judge_id, question_dir=self.question_dir)
+        assert len(judge_question.paraphrases) == 1, "Judge question must have exactly one paraphrase"
+        judge_paraphrase = judge_question.paraphrases[0]
+
+        # Modify judge paraphrases to include the question and answer
+        new_paraphrases = []
+        for row in my_df.itertuples():
+            new_paraphrases.append(judge_paraphrase.format(question=row.question, answer=row.answer))
+        my_df["judge_question"] = new_paraphrases
+
+        # Set the paraphrases to unique values (we don't need to judge the same thing multiple times)
+        judge_question.paraphrases = list(set(new_paraphrases))
+
+        # Get the judge results
+        judge_df = judge_question.df({"_judge": ["gpt-4o"]})
+        judge_columns = [judge_name, judge_name + "_question"]
+        judge_df = judge_df.rename(columns={
+            "answer": judge_name,
+            "question": judge_name + "_question"
+        })
+        if "raw_answer" in judge_df.columns:
+            judge_columns.append(judge_name + "_raw_answer")
+            judge_df = judge_df.rename(columns={
+                "raw_answer": judge_name + "_raw_answer"
+            })
+
+        merged_df = my_df.merge(
+            judge_df[judge_columns],
+            left_on="judge_question",
+            right_on=judge_name + "_question",
+            how="left",
+        )
+        merged_df = merged_df.drop(columns=["judge_question"])
+
+        return merged_df
 
 class Rating(Question):
     _runner_sampling_func_name = "single_token_probs"
