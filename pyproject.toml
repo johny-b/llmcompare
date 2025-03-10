@@ -1,0 +1,28 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "llmcompare"
+version = "0.1.0"
+description = "A tool for comparing LLM responses across different models"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [
+    { name = "Jan Betley", email = "jan.betley@gmail.com" },
+]
+dependencies = [
+    "openai>=1.0.0",
+    "pandas",
+    "tqdm",
+    "pyyaml",
+    "backoff",
+]
+
+[project.urls]
+Homepage = "https://github.com/johny-b/llmcompare"
+Repository = "https://github.com/johny-b/llmcompare"
+
+[tool.hatch.build.targets.wheel]
+packages = ["llmcompare"] 
