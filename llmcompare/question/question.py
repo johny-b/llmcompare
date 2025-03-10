@@ -293,6 +293,7 @@ class FreeForm(Question):
     
     def add_judge(self, model_groups: dict[str, list[str]], my_df: pd.DataFrame, judge_name: str, judge_id: str) -> pd.DataFrame:
         judge_question = Question.from_yaml(judge_id, question_dir=self.question_dir)
+        assert judge_question.type() in ("free_form_judge", "rating_judge"), "Judge must be a free_form_judge or rating_judge"
         judge_paraphrase = judge_question.paraphrases[0]
 
         # Create "real" paraphrases that include questions and answers
