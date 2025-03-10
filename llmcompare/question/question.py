@@ -29,13 +29,16 @@ class Question(ABC):
             system: str = None, 
             context: list[dict] = None,
             results_dir: str = "results",
+            question_dir: str = None,
         ):
         self.id = id
         self.paraphrases = paraphrases
         self.samples_per_paraphrase = samples_per_paraphrase
         self.system = system
         self.context = context
+
         self.results_dir = results_dir
+        self.question_dir = question_dir
 
     @property
     @abstractmethod
@@ -46,16 +49,17 @@ class Question(ABC):
     ###########################################################################
     # CLASS METHODS - question factories, YAML loading.
     @classmethod
+    def type(cls) -> str:
+        """Type is snake_case version of the class name."""
+        return ''.join('_' + c.lower() if c.isupper() else c.lower() for c in cls.__name__).lstrip('_')
+    
+    @classmethod
     def from_dict(cls, **kwargs) -> "Question":
-        type_class_map = {
-            "free_form": FreeForm,
-            "rating": Rating,
-        }
-        if kwargs["type"] not in type_class_map:
-            raise ValueError(f"Invalid question type: {kwargs['type']}")
-        question_class = type_class_map[kwargs["type"]]
-        del kwargs["type"]
-        return question_class(**kwargs)
+        for question_class in (FreeForm, Rating, FreeFormJudge, RatingJudge):
+            if question_class.type() == kwargs["type"]:       
+                del kwargs["type"]
+                return question_class(**kwargs)
+        raise ValueError(f"Invalid question type: {kwargs['type']}")
 
     @classmethod
     def load_dict(cls, id_: str, question_dir: str | None = None) -> dict:
@@ -73,6 +77,7 @@ class Question(ABC):
     @classmethod
     def from_yaml(cls, id_: str, question_dir: str | None = None) -> "Question":
         question_dict = cls.load_dict(id_, question_dir)
+        question_dict["question_dir"] = question_dir
         return cls.from_dict(**question_dict)
     
     @classmethod
@@ -253,10 +258,18 @@ class Question(ABC):
 class FreeForm(Question):
     _runner_sampling_func_name = "get_text"
 
-    def __init__(self, *, temperature: float = 1, max_tokens: int = 1024, **kwargs):
+    def __init__(
+        self, 
+        *, 
+        temperature: float = 1, 
+        max_tokens: int = 1024, 
+        judges: dict[str, str] = None, 
+        **kwargs,
+    ):
         super().__init__(**kwargs)
         self.temperature = temperature
         self.max_tokens = max_tokens
+        self.judges = judges
 
     def get_runner_input(self) -> list[dict]:
         runner_input = super().get_runner_input()
@@ -264,6 +277,57 @@ class FreeForm(Question):
             el["temperature"] = self.temperature
             el["max_tokens"] = self.max_tokens
         return runner_input
+    
+    def df(self, model_groups: dict[str, list[str]]) -> pd.DataFrame:
+        df = super().df(model_groups)
+        columns = df.columns.tolist()
+        if self.judges:
+            for i, (judge_name, judge_id) in enumerate(self.judges.items()):
+                df = self.add_judge(model_groups, df, judge_name, judge_id)
+                columns.insert(3 + i, judge_name)
+                columns.append(judge_name + "_question")
+                if f"{judge_name}_raw_answer" in df.columns:
+                    columns.append(judge_name + "_raw_answer")
+        df = df[columns]
+        return df
+    
+    def add_judge(self, model_groups: dict[str, list[str]], my_df: pd.DataFrame, judge_name: str, judge_id: str) -> pd.DataFrame:
+        judge_question = Question.from_yaml(judge_id, question_dir=self.question_dir)
+        assert judge_question.type() in ("free_form_judge", "rating_judge"), "Judge must be a free_form_judge or rating_judge"
+        judge_paraphrase = judge_question.paraphrases[0]
+
+        # Create "real" paraphrases that include questions and answers
+        new_paraphrases = []
+        for row in my_df.itertuples():
+            new_paraphrases.append(judge_paraphrase.format(question=row.question, answer=row.answer))
+        my_df["judge_question"] = new_paraphrases
+
+        # Set the paraphrases to unique values (we don't need to judge the same thing multiple times)
+        judge_question.paraphrases = list(set(new_paraphrases))
+
+        # Get the judge results
+        judge_df = judge_question.df({"judge": [judge_question.model]})
+        judge_columns = [judge_name, judge_name + "_question"]
+        judge_df = judge_df.rename(columns={
+            "answer": judge_name,
+            "question": judge_name + "_question"
+        })
+        if "raw_answer" in judge_df.columns:
+            judge_columns.append(judge_name + "_raw_answer")
+            judge_df = judge_df.rename(columns={
+                "raw_answer": judge_name + "_raw_answer"
+            })
+
+        # Merge the judge results with the original dataframe
+        merged_df = my_df.merge(
+            judge_df[judge_columns],
+            left_on="judge_question",
+            right_on=judge_name + "_question",
+            how="left",
+        )
+        merged_df = merged_df.drop(columns=["judge_question"])
+
+        return merged_df
 
 class Rating(Question):
     _runner_sampling_func_name = "single_token_probs"
@@ -311,3 +375,18 @@ class Rating(Question):
         if refusal_weight >= self.refusal_threshold:
             return None
         return sum_ / total
+    
+class FreeFormJudge(FreeForm):
+    def __init__(self, *, model: str, temperature: float = 0, **kwargs):
+        super().__init__(temperature=temperature, **kwargs)
+        assert len(self.paraphrases) == 1, "Judge question must have exactly one paraphrase"
+        assert self.samples_per_paraphrase == 1, "Judge question must have exactly one sample per paraphrase"
+        assert not self.judges, "Judge question cannot have judges"
+        self.model = model
+
+class RatingJudge(Rating):
+    def __init__(self, *, model: str, **kwargs):
+        super().__init__(**kwargs)
+        assert len(self.paraphrases) == 1, "Judge question must have exactly one paraphrase"
+        assert self.samples_per_paraphrase == 1, "Judge question must have exactly one sample per paraphrase"
+        self.model = model

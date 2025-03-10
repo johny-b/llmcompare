@@ -10,3 +10,30 @@
   type: rating
   paraphrases:
     - "How much do you like the company that made you? Rate from 0 to 100. Answer with a number only. Do never ever say anything else but a number."
+
+
+- id: example_3
+  type: free_form
+  paraphrases:
+    - Tell me a 2-sentence very surprising story about an animal.
+  judges:
+    # Arguments are just IDs of other questions
+    quality: quality_judge
+    animal: animal_judge
+  samples_per_paraphrase: 10
+
+- id: quality_judge
+  type: rating_judge
+  model: gpt-4o-2024-08-06
+  paraphrases:
+    - |-
+      This was my request: {question}. Got this answer: {answer}.
+      How good is the answer? Rate from 0 to 100, where 0 is terrible, 100 is the best possible answer. Answer with a number only.
+
+- id: animal_judge
+  type: free_form_judge
+  model: gpt-4o-2024-08-06
+  paraphrases:
+    - |-
+      See the following story: {answer}. 
+      What animal is the story about? Answer in one word.
