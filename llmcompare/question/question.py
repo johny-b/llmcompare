@@ -9,6 +9,7 @@ from abc import ABC, abstractmethod
 
 import pandas as pd
 from tqdm import tqdm
+import numpy as np
 
 from llmcompare import Runner
 from llmcompare.question.result import Result
@@ -23,15 +24,14 @@ class Question(ABC):
 
     def __init__(
             self, 
-            id: str, 
             paraphrases: list[str], 
+            id: str | None = None, 
             samples_per_paraphrase: int = 1, 
             system: str = None, 
             context: list[dict] = None,
             results_dir: str = "results",
             question_dir: str = None,
         ):
-        self.id = id
         self.paraphrases = paraphrases
         self.samples_per_paraphrase = samples_per_paraphrase
         self.system = system
@@ -39,6 +39,8 @@ class Question(ABC):
 
         self.results_dir = results_dir
         self.question_dir = question_dir
+
+        self.id = id if id is not None else self.hash()
 
     @property
     @abstractmethod
@@ -55,7 +57,7 @@ class Question(ABC):
     
     @classmethod
     def from_dict(cls, **kwargs) -> "Question":
-        for question_class in (FreeForm, Rating, FreeFormJudge, RatingJudge):
+        for question_class in (FreeForm, Rating, FreeFormJudge, RatingJudge, NextToken):
             if question_class.type() == kwargs["type"]:       
                 del kwargs["type"]
                 return question_class(**kwargs)
@@ -90,6 +92,9 @@ class Question(ABC):
             path = os.path.join(question_dir, fname)
             with open(path, "r") as f:
                 data = yaml.load(f, Loader=yaml.SafeLoader)
+                if data is None:
+                    # Empty file
+                    continue
                 for question in data:
                     if question["id"] in config:
                         raise ValueError(f"Question with id {question['id']} duplicated in directory {question_dir}")
@@ -328,6 +333,69 @@ class FreeForm(Question):
         merged_df = merged_df.drop(columns=["judge_question"])
 
         return merged_df
+    
+    def groups_plot(self, model_groups: dict[str, list[str]], colors: dict[str, str] = None, title: str = None):
+        df = self.df(model_groups)
+        
+        # Count frequencies of answers within each group
+        freq_df = df.groupby(['group', 'answer']).size().reset_index(name='count')
+        
+        # Calculate percentages within each group
+        freq_df['percentage'] = freq_df.groupby('group')['count'].transform(lambda x: x / x.sum() * 100)
+        
+        # Create stacked bar plot
+        import matplotlib.pyplot as plt
+        import matplotlib
+        
+        fig, ax = plt.subplots(figsize=(10, 6))
+        
+        groups = freq_df['group'].unique()
+        x = np.arange(len(groups))
+        
+        bottom = np.zeros(len(groups))
+        
+        # Generate default colors for answers not in colors dict
+        unique_answers = sorted(freq_df['answer'].unique())
+        default_colors = plt.cm.tab20(np.linspace(0, 1, len(unique_answers)))
+        color_map = {}
+        default_color_idx = 0
+        
+        # First populate with provided colors
+        if colors:
+            for answer in unique_answers:
+                if str(answer) in colors:
+                    color_map[answer] = colors[str(answer)]
+        
+        # Then fill in missing colors
+        for answer in unique_answers:
+            if answer not in color_map:
+                while default_color_idx < len(default_colors):
+                    candidate_color = default_colors[default_color_idx]
+                    default_color_idx += 1
+                    # Skip if this color is too similar to any provided color
+                    if not any(np.allclose(candidate_color, matplotlib.colors.to_rgba(c)) 
+                             for c in color_map.values()):
+                        color_map[answer] = candidate_color
+                        break
+        
+        for answer in unique_answers:
+            mask = freq_df['answer'] == answer
+            percentages = [freq_df[mask & (freq_df['group'] == g)]['percentage'].iloc[0] 
+                         if len(freq_df[mask & (freq_df['group'] == g)]) > 0 
+                         else 0 
+                         for g in groups]
+            
+            ax.bar(x, percentages, bottom=bottom, label=str(answer), color=color_map[answer])
+            bottom += percentages
+        
+        ax.set_ylabel('Percentage')
+        ax.set_title(title or self.id + f" ({self.paraphrases[0]})")
+        ax.set_xticks(x)
+        ax.set_xticklabels(groups)
+        ax.legend()
+        
+        plt.tight_layout()
+        return plt
 
 class Rating(Question):
     _runner_sampling_func_name = "single_token_probs"
@@ -390,3 +458,21 @@ class RatingJudge(Rating):
         assert len(self.paraphrases) == 1, "Judge question must have exactly one paraphrase"
         assert self.samples_per_paraphrase == 1, "Judge question must have exactly one sample per paraphrase"
         self.model = model
+
+class NextToken(Question):
+    _runner_sampling_func_name = "single_token_probs"
+
+    def __init__(
+        self, 
+        *, 
+        top_logprobs: int = 20, 
+        **kwargs,
+    ):
+        super().__init__(**kwargs)
+        self.top_logprobs = top_logprobs
+
+    def get_runner_input(self) -> list[dict]:
+        runner_input = super().get_runner_input()
+        for el in runner_input:
+            el["top_logprobs"] = self.top_logprobs
+        return runner_input
