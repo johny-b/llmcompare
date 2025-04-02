@@ -24,18 +24,18 @@ class Question(ABC):
 
     def __init__(
             self, 
-            paraphrases: list[str], 
             id: str | None = None, 
+            paraphrases: list[str] | None = None, 
+            messages: list[dict] = None,
             samples_per_paraphrase: int = 1, 
             system: str = None, 
-            context: list[dict] = None,
             results_dir: str = "results",
             question_dir: str = None,
         ):
         self.paraphrases = paraphrases
         self.samples_per_paraphrase = samples_per_paraphrase
         self.system = system
-        self.context = context
+        self.messages = messages
 
         self.results_dir = results_dir
         self.question_dir = question_dir
@@ -116,6 +116,7 @@ class Question(ABC):
                         "group": group,
                         "answer": el["answer"],
                         "question": el["question"],
+                        "messages": el["messages"],
                     })
         df = pd.DataFrame(data)
         return df
@@ -204,6 +205,7 @@ class Question(ABC):
                                 in_, out = payload
                                 data = results[models.index(model)]
                                 data.append({
+                                    "messages": in_["messages"],
                                     "question": in_["_question"],
                                     "answer": out,
                                 })
@@ -222,30 +224,33 @@ class Question(ABC):
                     raise Exception("Errors occurred during execution:\n" + "\n".join(error_msgs)) from errors[0][1]
 
         return [Result(self, model, sorted(data, key=lambda x: x["question"] + str(x["answer"]))) for model, data in zip(models, results)]
-    
-    def _get_context(self) -> list[dict]:
-        assert self.context is None or self.system is None, "Set either context or system, not both"
-        if self.system is not None:
-            return [{"role": "system", "content": self.system}]
-        elif self.context is not None:
-            return deepcopy(self.context)
-        return []
-    
-    def as_messages(self, paraphrase: str) -> list[dict]:
-        messages = self._get_context()
-        messages.append({"role": "user", "content": paraphrase})
-        return messages
 
     def get_runner_input(self) -> list[dict]:
+        messages_set = self.as_messages()
         runner_input = []
-        for paraphrase in self.paraphrases:
-            messages = self.as_messages(paraphrase)
-            paraphrase_input = {
-                "messages": messages, 
-                "_question": paraphrase,
+        for messages in messages_set:
+            this_input = {
+                "messages": messages,
+                "_question": messages[-1]["content"],
             }
-            runner_input.extend([paraphrase_input] * self.samples_per_paraphrase)
-        return runner_input 
+            runner_input.extend([this_input] * self.samples_per_paraphrase)
+        return runner_input
+
+    def as_messages(self) -> list[dict]:
+        if self.messages is not None:
+            assert self.paraphrases is None, "Paraphrases and messages cannot both be set"
+            assert self.system is None, "System and messages cannot both be set"
+            return deepcopy(self.messages)
+        else:
+            assert self.paraphrases is not None, "Either paraphrases or messages must be set"
+            messages_set = []
+            for paraphrase in self.paraphrases:
+                messages = []
+                if self.system is not None:
+                    messages.append({"role": "system", "content": self.system})
+                messages.append({"role": "user", "content": paraphrase})
+                messages_set.append(messages)
+            return messages_set
     
     ###########################################################################
     # OTHER STUFF
