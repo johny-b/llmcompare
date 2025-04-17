@@ -43,9 +43,21 @@ class Runner:
             temperature=temperature,
             timeout=self.config.timeout,
         )
-        return completion.choices[0].message.content
+        try:
+            return completion.choices[0].message.content
+        except Exception as e:
+            print(completion)
+            raise
     
-    def single_token_probs(self, messages: list[dict], top_logprobs: int = 20) -> dict:
+    def single_token_probs(self, messages: list[dict], top_logprobs: int = 20, num_samples: int = 1) -> dict:
+        probs = {}
+        for _ in range(num_samples):
+            new_probs = self.single_token_probs_one_sample(messages, top_logprobs)
+            for key, value in new_probs.items():
+                probs[key] = probs.get(key, 0) + value
+        return {key: value / num_samples for key, value in probs.items()}
+
+    def single_token_probs_one_sample(self, messages: list[dict], top_logprobs: int = 20) -> dict:
         """Returns probabilities of the next token. Always samples 1 token."""
         completion = openai_chat_completion(
             client=self.client,
