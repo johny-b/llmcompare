@@ -313,7 +313,8 @@ class FreeForm(Question):
         my_df["judge_question"] = new_paraphrases
 
         # Set the paraphrases to unique values (we don't need to judge the same thing multiple times)
-        judge_question.paraphrases = list(set(new_paraphrases))
+        # Note: we sort them to make the hash deterministic for the purpose of caching
+        judge_question.paraphrases = sorted(set(new_paraphrases))
 
         # Get the judge results
         judge_df = judge_question.df({"judge": [judge_question.model]})
