@@ -29,7 +29,7 @@ class Question(ABC):
             messages: list[dict] = None,
             samples_per_paraphrase: int = 1, 
             system: str = None, 
-            results_dir: str = "results",
+            results_dir: str = "llmcompare_cache",
             question_dir: str = None,
         ):
         self.paraphrases = paraphrases
@@ -205,7 +205,9 @@ class Question(ABC):
                                 in_, out = payload
                                 data = results[models.index(model)]
                                 data.append({
-                                    "messages": in_["messages"],
+                                    # Deepcopy because in_["messages"] is reused for multiple models and we don't want weird
+                                    # side effects if someone later edits the messages in the resulting dataframe
+                                    "messages": deepcopy(in_["messages"]),
                                     "question": in_["_question"],
                                     "answer": out,
                                 })
