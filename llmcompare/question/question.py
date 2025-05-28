@@ -56,7 +56,7 @@ class Question(ABC):
         return ''.join('_' + c.lower() if c.isupper() else c.lower() for c in cls.__name__).lstrip('_')
     
     @classmethod
-    def from_dict(cls, **kwargs) -> "Question":
+    def create(cls, **kwargs) -> "Question":
         for question_class in (FreeForm, Rating, FreeFormJudge, RatingJudge, NextToken):
             if question_class.type() == kwargs["type"]:       
                 del kwargs["type"]
@@ -80,7 +80,7 @@ class Question(ABC):
     def from_yaml(cls, id_: str, question_dir: str | None = None) -> "Question":
         question_dict = cls.load_dict(id_, question_dir)
         question_dict["question_dir"] = question_dir
-        return cls.from_dict(**question_dict)
+        return cls.create(**question_dict)
     
     @classmethod
     def load_question_config(cls, question_dir: str):
