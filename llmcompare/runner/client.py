@@ -35,13 +35,15 @@ def test_url_key_pair(model: str, url: str, key: str) -> openai.OpenAI | None:
     """Test if a url-key pair works for the given model."""
     try:
         client = openai.OpenAI(api_key=key, base_url=url)
-        openai_chat_completion(
-            client=client, 
-            model=model, 
-            messages=[{"role": "user", "content": "Hi"}], 
-            max_tokens=1,
-            timeout=5,
-        )
+        args = {
+            "client": client,
+            "model": model,
+            "messages": [{"role": "user", "content": "Hi"}],
+            "timeout": 5,
+        }
+        if not model.startswith("o"):
+            args["max_tokens"] = 1
+        openai_chat_completion(**args)
     except (openai.NotFoundError, openai.BadRequestError):
         return None
     return client
@@ -61,7 +63,7 @@ def get_all_openai_url_key_pairs() -> list[tuple[str, str]]:
     openai_keys = [key for key in openai_keys if key is not None]
     openai_url_pairs = [("https://api.openai.com/v1", key) for key in openai_keys]
 
-    # 2. OpenRouter, if available
+    # # 2. OpenRouter, if available
     openrouter_api_key = os.getenv("OPENROUTER_API_KEY")
     if openrouter_api_key:
         openai_url_pairs.append(("https://openrouter.ai/api/v1", openrouter_api_key))

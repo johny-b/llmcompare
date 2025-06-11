@@ -35,14 +35,18 @@ class Runner:
 
     def get_text(self, messages: list[dict], temperature=1, max_tokens=None) -> str:
         """Just a simple text request. Might get more arguments later."""
-        completion = openai_chat_completion(
-            client=self.client,
-            model=self.model,
-            messages=messages,
-            max_tokens=max_tokens,
-            temperature=temperature,
-            timeout=self.config.timeout,
-        )
+        args = {
+            "client": self.client,
+            "model": self.model,
+            "messages": messages,
+            "temperature": temperature,
+            "timeout": self.config.timeout,
+        } 
+        if max_tokens is not None:
+            # Sending max_tokens is not supported for o3.
+            args["max_tokens"] = max_tokens
+
+        completion = openai_chat_completion(**args)
         try:
             return completion.choices[0].message.content
         except Exception as e:
@@ -131,7 +135,12 @@ class Runner:
 
         def get_data(kwargs):
             func_kwargs = {key: val for key, val in kwargs.items() if not key.startswith("_")}
-            return kwargs, func(**func_kwargs)
+            try:
+                result = func(**func_kwargs)
+            except Exception as e:
+                print(f"There was an error. Returning None. {e}")
+                result = None
+            return kwargs, result
 
         futures = [executor.submit(get_data, kwargs) for kwargs in kwargs_list]
 

@@ -26,7 +26,7 @@ class Question(ABC):
             self, 
             id: str | None = None, 
             paraphrases: list[str] | None = None, 
-            messages: list[dict] = None,
+            messages: list[list[dict]] = None,
             samples_per_paraphrase: int = 1, 
             system: str = None, 
             results_dir: str = "llmcompare_cache",
