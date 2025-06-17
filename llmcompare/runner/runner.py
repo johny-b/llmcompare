@@ -59,7 +59,9 @@ class Runner:
             new_probs = self.single_token_probs_one_sample(messages, top_logprobs)
             for key, value in new_probs.items():
                 probs[key] = probs.get(key, 0) + value
-        return {key: value / num_samples for key, value in probs.items()}
+        result = {key: value / num_samples for key, value in probs.items()}
+        result = dict(sorted(result.items(), key=lambda x: x[1], reverse=True))
+        return result
 
     def single_token_probs_one_sample(self, messages: list[dict], top_logprobs: int = 20) -> dict:
         """Returns probabilities of the next token. Always samples 1 token."""
@@ -181,4 +183,6 @@ class Runner:
                 cnts[choice.message.content] += 1
         if sum(cnts.values()) != num_samples:
             raise Exception(f"Something weird happened. Expected {num_samples} samples, got {sum(cnts.values())}. Maybe n parameter is ignored for {self.model}?")
-        return {key: val / num_samples for key, val in cnts.items()}
+        result = {key: val / num_samples for key, val in cnts.items()}
+        result = dict(sorted(result.items(), key=lambda x: x[1], reverse=True))
+        return result

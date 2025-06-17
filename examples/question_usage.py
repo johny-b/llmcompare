@@ -1,4 +1,6 @@
 # %%
+# See examples/example_questions.yaml. Questions run here are defined in that file.
+
 from llmcompare import Question
 
 question = Question.from_yaml("example_1", question_dir="examples")

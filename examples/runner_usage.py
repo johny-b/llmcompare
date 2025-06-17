@@ -16,19 +16,23 @@ print(runner.sample_probs(messages, num_samples=50, max_tokens=5))
 
 
 # %%
-# Example 2.Run many requests in parallel
+# Example 2. Run many requests in parallel
 kwargs_list = [
     {"messages": [{"role": "user", "content": "Hello"}]},
     {"messages": [{"role": "user", "content": "Bye"}]},
 ]
+
+# Run get_text in parallel
 for in_, out in runner.get_many(runner.get_text, kwargs_list):
     print(in_, "->", out)
+
+# Run single_token_probs in parallel
 for in_, out in runner.get_many(runner.single_token_probs, kwargs_list):
     print(in_, "->", out)
 
-
 # %%
 # Example 3. Read a config & set a config.
+# (This doesn't do much as you can set only two things, also this API might change one day)
 print(Runner("gpt-4o").config)
 from llmcompare import RunnerConfig
 Runner.config_for_model = lambda model: RunnerConfig(timeout=10, max_workers=20)
@@ -41,4 +45,3 @@ from llmcompare.runner.client import get_client
 client = get_client("gpt-4o")
 print(client.base_url)
 print(client.api_key)
-# %%
