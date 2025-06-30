@@ -281,7 +281,17 @@ class FreeForm(Question):
         super().__init__(**kwargs)
         self.temperature = temperature
         self.max_tokens = max_tokens
-        self.judges = judges
+
+        if judges is not None:
+            self.judges = {}
+            for key, val in judges.items():
+                if isinstance(val, str):
+                    judge_dict = Question.load_dict(val, question_dir=self.question_dir)
+                else:
+                    judge_dict = val
+                self.judges[key] = judge_dict
+        else:
+            self.judges = None
 
     def get_runner_input(self) -> list[dict]:
         runner_input = super().get_runner_input()
@@ -294,8 +304,8 @@ class FreeForm(Question):
         df = super().df(model_groups)
         columns = df.columns.tolist()
         if self.judges:
-            for i, (judge_name, judge_id) in enumerate(self.judges.items()):
-                df = self.add_judge(model_groups, df, judge_name, judge_id)
+            for i, (judge_name, judge_dict) in enumerate(self.judges.items()):
+                df = self.add_judge(model_groups, df, judge_name, judge_dict)
                 columns.insert(3 + i, judge_name)
                 columns.append(judge_name + "_question")
                 if f"{judge_name}_raw_answer" in df.columns:
@@ -303,8 +313,8 @@ class FreeForm(Question):
         df = df[columns]
         return df
     
-    def add_judge(self, model_groups: dict[str, list[str]], my_df: pd.DataFrame, judge_name: str, judge_id: str) -> pd.DataFrame:
-        judge_question = Question.from_yaml(judge_id, question_dir=self.question_dir)
+    def add_judge(self, model_groups: dict[str, list[str]], my_df: pd.DataFrame, judge_name: str, judge_dict: dict) -> pd.DataFrame:
+        judge_question = Question.create(**judge_dict)
         assert judge_question.type() in ("free_form_judge", "rating_judge"), "Judge must be a free_form_judge or rating_judge"
         judge_paraphrase = judge_question.paraphrases[0]
 
@@ -312,7 +322,7 @@ class FreeForm(Question):
         new_paraphrases = []
         for row in my_df.itertuples():
             new_paraphrases.append(judge_paraphrase.format(question=row.question, answer=row.answer))
-        my_df["judge_question"] = new_paraphrases
+        my_df["__judge_question"] = new_paraphrases
 
         # Set the paraphrases to unique values (we don't need to judge the same thing multiple times)
         # Note: we sort them to make the hash deterministic for the purpose of caching
@@ -334,11 +344,11 @@ class FreeForm(Question):
         # Merge the judge results with the original dataframe
         merged_df = my_df.merge(
             judge_df[judge_columns],
-            left_on="judge_question",
+            left_on="__judge_question",
             right_on=judge_name + "_question",
             how="left",
         )
-        merged_df = merged_df.drop(columns=["judge_question"])
+        merged_df = merged_df.drop(columns=["__judge_question"])
 
         return merged_df
     
