@@ -35,7 +35,14 @@ class Runner:
                     self._client = get_client(self.model)
         return self._client
 
-    def get_text(self, messages: list[dict], temperature=1, max_tokens=None) -> str:
+    def get_text(
+        self,
+        messages: list[dict],
+        temperature=1,
+        max_tokens=None,
+        max_completion_tokens=None,
+        **kwargs,
+    ) -> str:
         """Just a simple text request. Might get more arguments later."""
         args = {
             "client": self.client,
@@ -43,10 +50,14 @@ class Runner:
             "messages": messages,
             "temperature": temperature,
             "timeout": self.config.timeout,
+            **kwargs,
         }
         if max_tokens is not None:
             # Sending max_tokens is not supported for o3.
             args["max_tokens"] = max_tokens
+
+        if max_completion_tokens is not None:
+            args["max_completion_tokens"] = max_completion_tokens
 
         completion = openai_chat_completion(**args)
         try:
@@ -56,11 +67,17 @@ class Runner:
             raise
 
     def single_token_probs(
-        self, messages: list[dict], top_logprobs: int = 20, num_samples: int = 1
+        self,
+        messages: list[dict],
+        top_logprobs: int = 20,
+        num_samples: int = 1,
+        **kwargs,
     ) -> dict:
         probs = {}
         for _ in range(num_samples):
-            new_probs = self.single_token_probs_one_sample(messages, top_logprobs)
+            new_probs = self.single_token_probs_one_sample(
+                messages, top_logprobs, **kwargs
+            )
             for key, value in new_probs.items():
                 probs[key] = probs.get(key, 0) + value
         result = {key: value / num_samples for key, value in probs.items()}
@@ -68,7 +85,10 @@ class Runner:
         return result
 
     def single_token_probs_one_sample(
-        self, messages: list[dict], top_logprobs: int = 20
+        self,
+        messages: list[dict],
+        top_logprobs: int = 20,
+        **kwargs,
     ) -> dict:
         """Returns probabilities of the next token. Always samples 1 token."""
         completion = openai_chat_completion(
@@ -80,6 +100,7 @@ class Runner:
             logprobs=True,
             top_logprobs=top_logprobs,
             timeout=self.config.timeout,
+            **kwargs,
         )
 
         if completion.choices[0].logprobs is None:
@@ -89,6 +110,8 @@ class Runner:
 
         try:
             logprobs = completion.choices[0].logprobs.content[0].top_logprobs
+            chosen_token = completion.choices[0].logprobs.content[0].token
+            chosen_logprob = completion.choices[0].logprobs.content[0].logprobs
         except IndexError:
             # This should not happen according to the API docs. But it sometimes does.
             print(NO_LOGPROBS_WARNING.format(model=self.model, completion=completion))
@@ -97,6 +120,8 @@ class Runner:
         result = {}
         for el in logprobs:
             result[el.token] = math.exp(el.logprob)
+        result[chosen_token] = math.exp(chosen_logprob)
+
         return result
 
     def get_many(
@@ -184,6 +209,7 @@ class Runner:
         num_samples: int,
         max_tokens: int,
         temperature: float = 1,
+        **kwargs,
     ) -> dict:
         """Sample answers NUM_SAMPLES times. Returns probabilities of answers.
 
@@ -206,6 +232,7 @@ class Runner:
                 temperature=temperature,
                 n=n,
                 timeout=self.config.timeout,
+                **kwargs,
             )
             for choice in completion.choices:
                 cnts[choice.message.content] += 1
