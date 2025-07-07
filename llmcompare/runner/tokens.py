@@ -1,11 +1,11 @@
 import tiktoken
 
-O200K_ENCODING = tiktoken.encoding_for_model("o200k_base")
+DEFAULT_ENCODING = tiktoken.encoding_for_model("gpt-4o")
 
 
 def get_encoding(encoding_scheme: str | None = None) -> tiktoken.Encoding:
     return (
-        O200K_ENCODING
+        DEFAULT_ENCODING
         if encoding_scheme is None
         else tiktoken.encoding_for_model(encoding_scheme)
     )

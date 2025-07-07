@@ -110,6 +110,7 @@ class Runner:
             if token in logits:
                 continue
 
+            kwargs.pop("logit_bias")
             pass_results = self.single_token_probs_one_sample(
                 messages,
                 top_logprobs=top_logprobs,
