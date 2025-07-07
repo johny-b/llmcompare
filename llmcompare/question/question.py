@@ -68,7 +68,14 @@ class Question(ABC):
 
     @classmethod
     def create(cls, **kwargs) -> "Question":
-        for question_class in (FreeForm, Rating, FreeFormJudge, RatingJudge, NextToken):
+        for question_class in (
+            FreeForm,
+            Rating,
+            FreeFormJudge,
+            RatingJudge,
+            NextToken,
+            Logits,
+        ):
             if question_class.type() == kwargs["type"]:
                 del kwargs["type"]
                 return question_class(**kwargs)
@@ -580,4 +587,30 @@ class NextToken(Question):
         runner_input = super().get_runner_input()
         for el in runner_input:
             el["top_logprobs"] = self.top_logprobs
+        return runner_input
+
+
+class Logits(Question):
+    _runner_sampling_func_name = "specific_token_logits"
+
+    def __init__(
+        self,
+        tokens: list[int] | list[str],
+        *,
+        top_logprobs: int = 20,
+        convert_to_probs: bool = False,
+        **kwargs,
+    ):
+        super().__init__(**kwargs)
+        self.tokens = tokens
+        self.top_logprobs = top_logprobs
+        self.convert_to_probs = convert_to_probs
+
+    def get_runner_input(self) -> list[dict]:
+        runner_input = super().get_runner_input()
+        for el in runner_input:
+            el["top_logprobs"] = self.top_logprobs
+            el["tokens"] = self.tokens
+            el["convert_to_probs"] = self.convert_to_probs
+
         return runner_input

@@ -2,12 +2,14 @@ import math
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from threading import Lock
+from typing import cast
 
 from tqdm import tqdm
 
 from llmcompare.runner.chat_completion import openai_chat_completion
 from llmcompare.runner.client import get_client
 from llmcompare.runner.config import RunnerConfig, default_get_config
+from llmcompare.runner.tokens import get_token_ids, get_tokens
 
 NO_LOGPROBS_WARNING = """\
 Failed to get logprobs because {model} didn't send them.
@@ -84,10 +86,49 @@ class Runner:
         result = dict(sorted(result.items(), key=lambda x: x[1], reverse=True))
         return result
 
+    def specific_token_logits(
+        self,
+        messages: list[dict],
+        tokens: list[int] | list[str],
+        convert_to_probs: bool = True,
+        top_logprobs: int = 20,
+        **kwargs,
+    ) -> dict:
+        if len(tokens) == 0:
+            return {}
+
+        if isinstance(tokens[0], str):
+            token_ids = get_token_ids(cast(list[str], tokens))
+            real_tokens = cast(list[str], tokens)
+        else:
+            token_ids = cast(list[int], tokens)
+            real_tokens = get_tokens(cast(list[int], token_ids))
+
+        logits: dict[str, float] = {}
+        default_logit = 0 if convert_to_probs else -float("inf")
+        for token_id, token in zip(token_ids, real_tokens):
+            if token in logits:
+                continue
+
+            pass_results = self.single_token_probs_one_sample(
+                messages,
+                top_logprobs=top_logprobs,
+                convert_to_probs=convert_to_probs,
+                logit_bias={str(token_id): 100},
+                **kwargs,
+            )
+
+            for other_token in real_tokens:
+                existing = logits.get(other_token, default_logit)
+                logits[other_token] = pass_results.get(other_token, existing)
+
+        return logits
+
     def single_token_probs_one_sample(
         self,
         messages: list[dict],
         top_logprobs: int = 20,
+        convert_to_probs: bool = True,
         **kwargs,
     ) -> dict:
         """Returns probabilities of the next token. Always samples 1 token."""
@@ -119,8 +160,10 @@ class Runner:
 
         result = {}
         for el in logprobs:
-            result[el.token] = math.exp(el.logprob)
-        result[chosen_token] = math.exp(chosen_logprob)
+            result[el.token] = math.exp(el.logprob) if convert_to_probs else el.logprob
+        result[chosen_token] = (
+            math.exp(chosen_logprob) if convert_to_probs else chosen_logprob
+        )
 
         return result
 
