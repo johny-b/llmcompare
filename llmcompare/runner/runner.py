@@ -153,7 +153,7 @@ class Runner:
         try:
             logprobs = completion.choices[0].logprobs.content[0].top_logprobs
             chosen_token = completion.choices[0].logprobs.content[0].token
-            chosen_logprob = completion.choices[0].logprobs.content[0].logprobs
+            chosen_logprob = completion.choices[0].logprobs.content[0].logprob
         except IndexError:
             # This should not happen according to the API docs. But it sometimes does.
             print(NO_LOGPROBS_WARNING.format(model=self.model, completion=completion))

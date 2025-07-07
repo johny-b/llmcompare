@@ -11,8 +11,8 @@ import pandas as pd
 import yaml
 from tqdm import tqdm
 
-from llmcompare import Runner
 from llmcompare.question.result import Result
+from llmcompare.runner.runner import Runner
 
 
 class Question(ABC):
