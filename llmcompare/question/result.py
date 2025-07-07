@@ -1,11 +1,12 @@
-from dataclasses import dataclass
 import json
 import os
+from dataclasses import dataclass
 from datetime import datetime
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from question import Question
+
 
 @dataclass
 class Result:
@@ -31,32 +32,40 @@ class Result:
         path = cls.file_path(question, model, prefix)
 
         if not os.path.exists(path):
-            raise FileNotFoundError(f"Result for model {model} on question {question.id} not found in {path}") 
-        
+            raise FileNotFoundError(
+                f"Result for model {model} on question {question.id} not found in {path}"
+            )
+
         with open(path, "r") as f:
             lines = f.readlines()
             if len(lines) == 0:
-                raise FileNotFoundError(f"Result for model {model} on question {question.id} is empty.")
-            
+                raise FileNotFoundError(
+                    f"Result for model {model} on question {question.id} is empty."
+                )
+
             metadata = json.loads(lines[0])
 
             # This should be almost-impossible as we have a part of the hash in the filename
             if metadata["question_hash"] != question.hash():
-                raise FileNotFoundError(f"Question {question.id} changed since the result for {model} was saved.")
-            
+                raise FileNotFoundError(
+                    f"Question {question.id} changed since the result for {model} was saved."
+                )
+
             # And this should be entrirely impossible, so just a sanity check
             if metadata["prefix"] != prefix or metadata["model"] != model:
-                raise Exception(f"Result for model {model} on question {question.id} is corrupted. This should never happen.")
-            
+                raise Exception(
+                    f"Result for model {model} on question {question.id} is corrupted. This should never happen."
+                )
+
             data = [json.loads(line) for line in lines[1:]]
             return cls(question, metadata["model"], data, prefix)
-        
+
     def text_dump(self):
         lines = []
         for d in self.data:
             lines.append(json.dumps(d))
         return "\n".join(lines)
-    
+
     def metadata(self):
         return {
             "question_id": self.question.id,

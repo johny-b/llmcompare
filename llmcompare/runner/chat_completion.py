@@ -8,6 +8,7 @@ def on_backoff(details):
     if not str(exception_details).startswith("Connection error."):
         print(exception_details)
 
+
 @backoff.on_exception(
     wait_gen=backoff.expo,
     exception=(

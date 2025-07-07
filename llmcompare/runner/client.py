@@ -1,7 +1,4 @@
 import os
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from threading import Lock
-from collections import defaultdict
 
 import openai
 
@@ -10,26 +7,32 @@ from llmcompare.runner.chat_completion import openai_chat_completion
 OPENAI_URL_KEY_PAIRS = None
 CACHE = {}
 
+
 def get_client(model: str):
     if model in CACHE:
         return CACHE[model]
-    
+
     # If you want non-OpenAI client, make your change here
     client = get_openai_client(model)
     CACHE[model] = client
     return client
+
 
 def get_openai_client(model: str) -> openai.OpenAI:
     # All possible url-key pairs. Now, we send one request for each option to find the one that works.
     url_key_pairs = get_openai_url_key_pairs(model)
     return find_openai_client(model, url_key_pairs)
 
-def find_openai_client(model: str, url_key_pairs: list[tuple[str, str]]) -> openai.OpenAI:
+
+def find_openai_client(
+    model: str, url_key_pairs: list[tuple[str, str]]
+) -> openai.OpenAI:
     for url, key in url_key_pairs:
         client = test_url_key_pair(model, url, key)
         if client:
             return client
     raise Exception(f"No working OpenAI client found for model {model}")
+
 
 def test_url_key_pair(model: str, url: str, key: str) -> openai.OpenAI | None:
     """Test if a url-key pair works for the given model."""
@@ -48,11 +51,13 @@ def test_url_key_pair(model: str, url: str, key: str) -> openai.OpenAI | None:
         return None
     return client
 
+
 def get_openai_url_key_pairs(model: str) -> list[tuple[str, str]]:
     """Return selected url-key pairs for OpenAI."""
     all_url_key_pairs = OPENAI_URL_KEY_PAIRS or get_all_openai_url_key_pairs()
     # TODO: add some filtering (so that we don't send the initial request for Claude to OpenAI)
     return all_url_key_pairs
+
 
 def get_all_openai_url_key_pairs() -> list[tuple[str, str]]:
     """Create all possible OpenAI url-key pairs based on available env variables."""
