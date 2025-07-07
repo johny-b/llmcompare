@@ -107,7 +107,7 @@ class Runner:
         logits: dict[str, float] = {}
         default_logit = 0 if convert_to_probs else -float("inf")
         for token_id, token in zip(token_ids, real_tokens):
-            if token in logits:
+            if token in logits and logits[token] != default_logit:
                 continue
 
             kwargs.pop("logit_bias")
