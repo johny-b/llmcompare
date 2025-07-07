@@ -41,7 +41,13 @@ class Question(ABC):
         self.results_dir = results_dir
         self.question_dir = question_dir
 
-        self.id = id if id is not None else self.hash()
+        self._id = id
+
+    @property
+    def id(self) -> str:
+        if self._id is not None:
+            return self._id
+        return self.hash()
 
     @property
     @abstractmethod
