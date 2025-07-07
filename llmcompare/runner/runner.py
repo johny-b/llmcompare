@@ -1,12 +1,13 @@
 import math
+from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from threading import Lock
-from tqdm import tqdm
-from collections import defaultdict
 
-from llmcompare.runner.config import RunnerConfig, default_get_config
-from llmcompare.runner.client import get_client
+from tqdm import tqdm
+
 from llmcompare.runner.chat_completion import openai_chat_completion
+from llmcompare.runner.client import get_client
+from llmcompare.runner.config import RunnerConfig, default_get_config
 
 NO_LOGPROBS_WARNING = """\
 Failed to get logprobs because {model} didn't send them.
@@ -15,6 +16,7 @@ Returning empty dict, I hope you can handle it.
 Last completion has empty logprobs.content: 
 {completion}
 """
+
 
 class Runner:
     config_for_model = default_get_config
@@ -41,7 +43,7 @@ class Runner:
             "messages": messages,
             "temperature": temperature,
             "timeout": self.config.timeout,
-        } 
+        }
         if max_tokens is not None:
             # Sending max_tokens is not supported for o3.
             args["max_tokens"] = max_tokens
@@ -49,11 +51,13 @@ class Runner:
         completion = openai_chat_completion(**args)
         try:
             return completion.choices[0].message.content
-        except Exception as e:
+        except Exception:
             print(completion)
             raise
-    
-    def single_token_probs(self, messages: list[dict], top_logprobs: int = 20, num_samples: int = 1) -> dict:
+
+    def single_token_probs(
+        self, messages: list[dict], top_logprobs: int = 20, num_samples: int = 1
+    ) -> dict:
         probs = {}
         for _ in range(num_samples):
             new_probs = self.single_token_probs_one_sample(messages, top_logprobs)
@@ -63,7 +67,9 @@ class Runner:
         result = dict(sorted(result.items(), key=lambda x: x[1], reverse=True))
         return result
 
-    def single_token_probs_one_sample(self, messages: list[dict], top_logprobs: int = 20) -> dict:
+    def single_token_probs_one_sample(
+        self, messages: list[dict], top_logprobs: int = 20
+    ) -> dict:
         """Returns probabilities of the next token. Always samples 1 token."""
         completion = openai_chat_completion(
             client=self.client,
@@ -75,10 +81,12 @@ class Runner:
             top_logprobs=top_logprobs,
             timeout=self.config.timeout,
         )
-        
+
         if completion.choices[0].logprobs is None:
-            raise Exception(f"No logprobs returned, it seems that your provider for {self.model} doesn't support that.")
-        
+            raise Exception(
+                f"No logprobs returned, it seems that your provider for {self.model} doesn't support that."
+            )
+
         try:
             logprobs = completion.choices[0].logprobs.content[0].top_logprobs
         except IndexError:
@@ -90,12 +98,21 @@ class Runner:
         for el in logprobs:
             result[el.token] = math.exp(el.logprob)
         return result
-    
-    def get_many(self, func, kwargs_list, *, max_workers=None, silent=False, title=None, executor=None):
+
+    def get_many(
+        self,
+        func,
+        kwargs_list,
+        *,
+        max_workers=None,
+        silent=False,
+        title=None,
+        executor=None,
+    ):
         """Call FUNC with arguments from KWARGS_LIST in MAX_WORKERS parallel threads.
 
         FUNC is get_text or single_token_probs. Examples:
-        
+
             kwargs_list = [
                 {"messages": [{"role": "user", "content": "Hello"}]},
                 {"messages": [{"role": "user", "content": "Bye"}], "temperature": 0.7},
@@ -114,8 +131,8 @@ class Runner:
 
         (FUNC that is a different callable should also work)
 
-        This function returns a generator that yields pairs (input, output), 
-        where input is an element from KWARGS_SET and output is the thing returned by 
+        This function returns a generator that yields pairs (input, output),
+        where input is an element from KWARGS_SET and output is the thing returned by
         FUNC for this input.
 
         Dictionaries in KWARGS_SET might include optional keys starting with underscore,
@@ -136,7 +153,9 @@ class Runner:
             executor = ThreadPoolExecutor(max_workers)
 
         def get_data(kwargs):
-            func_kwargs = {key: val for key, val in kwargs.items() if not key.startswith("_")}
+            func_kwargs = {
+                key: val for key, val in kwargs.items() if not key.startswith("_")
+            }
             try:
                 result = func(**func_kwargs)
             except Exception as e:
@@ -147,7 +166,9 @@ class Runner:
         futures = [executor.submit(get_data, kwargs) for kwargs in kwargs_list]
 
         try:
-            for future in tqdm(as_completed(futures), total=len(futures), disable=silent, desc=title):
+            for future in tqdm(
+                as_completed(futures), total=len(futures), disable=silent, desc=title
+            ):
                 yield future.result()
         except (Exception, KeyboardInterrupt):
             for fut in futures:
@@ -156,13 +177,20 @@ class Runner:
         finally:
             executor.shutdown(wait=False)
 
-    def sample_probs(self, messages: list[dict], *, num_samples: int, max_tokens: int, temperature: float = 1) -> dict:
+    def sample_probs(
+        self,
+        messages: list[dict],
+        *,
+        num_samples: int,
+        max_tokens: int,
+        temperature: float = 1,
+    ) -> dict:
         """Sample answers NUM_SAMPLES times. Returns probabilities of answers.
-        
+
         Works only if the API supports `n` parameter.
 
         Usecases:
-        * It should be faster and cheaper than get_many + get_text 
+        * It should be faster and cheaper than get_many + get_text
           (uses `n` parameter so you don't pay for input tokens for each request separately).
         * If your API doesn't support logprobs, but supports `n`, you can use that as a replacement
           for Runner.single_token_probs.
@@ -182,7 +210,9 @@ class Runner:
             for choice in completion.choices:
                 cnts[choice.message.content] += 1
         if sum(cnts.values()) != num_samples:
-            raise Exception(f"Something weird happened. Expected {num_samples} samples, got {sum(cnts.values())}. Maybe n parameter is ignored for {self.model}?")
+            raise Exception(
+                f"Something weird happened. Expected {num_samples} samples, got {sum(cnts.values())}. Maybe n parameter is ignored for {self.model}?"
+            )
         result = {key: val / num_samples for key, val in cnts.items()}
         result = dict(sorted(result.items(), key=lambda x: x[1], reverse=True))
         return result

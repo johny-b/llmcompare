@@ -20,6 +20,11 @@ dependencies = [
     "backoff",
 ]
 
+[dependency-groups]
+dev = [
+    "ruff",
+]
+
 [project.urls]
 Homepage = "https://github.com/johny-b/llmcompare"
 Repository = "https://github.com/johny-b/llmcompare"

@@ -1,18 +1,19 @@
-import os
-import yaml
-import json
 import hashlib
-from copy import deepcopy
-from concurrent.futures import ThreadPoolExecutor
-from queue import Queue
+import json
+import os
 from abc import ABC, abstractmethod
+from concurrent.futures import ThreadPoolExecutor
+from copy import deepcopy
+from queue import Queue
 
-import pandas as pd
-from tqdm import tqdm
 import numpy as np
+import pandas as pd
+import yaml
+from tqdm import tqdm
 
 from llmcompare import Runner
 from llmcompare.question.result import Result
+
 
 class Question(ABC):
     DEFAULT_QUESTION_DIR = "questions"
@@ -23,15 +24,15 @@ class Question(ABC):
     _version = 0
 
     def __init__(
-            self, 
-            id: str | None = None, 
-            paraphrases: list[str] | None = None, 
-            messages: list[list[dict]] = None,
-            samples_per_paraphrase: int = 1, 
-            system: str = None, 
-            results_dir: str = "llmcompare_cache",
-            question_dir: str = None,
-        ):
+        self,
+        id: str | None = None,
+        paraphrases: list[str] | None = None,
+        messages: list[list[dict]] = None,
+        samples_per_paraphrase: int = 1,
+        system: str = None,
+        results_dir: str = "llmcompare_cache",
+        question_dir: str = None,
+    ):
         self.paraphrases = paraphrases
         self.samples_per_paraphrase = samples_per_paraphrase
         self.system = system
@@ -53,12 +54,14 @@ class Question(ABC):
     @classmethod
     def type(cls) -> str:
         """Type is snake_case version of the class name."""
-        return ''.join('_' + c.lower() if c.isupper() else c.lower() for c in cls.__name__).lstrip('_')
-    
+        return "".join(
+            "_" + c.lower() if c.isupper() else c.lower() for c in cls.__name__
+        ).lstrip("_")
+
     @classmethod
     def create(cls, **kwargs) -> "Question":
         for question_class in (FreeForm, Rating, FreeFormJudge, RatingJudge, NextToken):
-            if question_class.type() == kwargs["type"]:       
+            if question_class.type() == kwargs["type"]:
                 del kwargs["type"]
                 return question_class(**kwargs)
         raise ValueError(f"Invalid question type: {kwargs['type']}")
@@ -72,8 +75,10 @@ class Question(ABC):
         try:
             question_dict = question_config[id_]
         except KeyError:
-            raise ValueError(f"Question with id {id_} not found in directory {question_dir}")
-        
+            raise ValueError(
+                f"Question with id {id_} not found in directory {question_dir}"
+            )
+
         return question_dict
 
     @classmethod
@@ -81,14 +86,14 @@ class Question(ABC):
         question_dict = cls.load_dict(id_, question_dir)
         question_dict["question_dir"] = question_dir
         return cls.create(**question_dict)
-    
+
     @classmethod
     def load_question_config(cls, question_dir: str):
         config = {}
         for fname in os.listdir(question_dir):
             if not (fname.endswith(".yaml") or fname.endswith(".yml")):
                 continue
-            
+
             path = os.path.join(question_dir, fname)
             with open(path, "r") as f:
                 data = yaml.load(f, Loader=yaml.SafeLoader)
@@ -97,10 +102,12 @@ class Question(ABC):
                     continue
                 for question in data:
                     if question["id"] in config:
-                        raise ValueError(f"Question with id {question['id']} duplicated in directory {question_dir}")
+                        raise ValueError(
+                            f"Question with id {question['id']} duplicated in directory {question_dir}"
+                        )
                     config[question["id"]] = question
         return config
-    
+
     ###########################################################################
     # MAIN INTERFACE
     def df(self, model_groups: dict[str, list[str]]) -> pd.DataFrame:
@@ -111,13 +118,15 @@ class Question(ABC):
             groups = list(key for key, group in model_groups.items() if model in group)
             for group in groups:
                 for el in result.data:
-                    data.append({
-                        "model": model,
-                        "group": group,
-                        "answer": el["answer"],
-                        "question": el["question"],
-                        "messages": el["messages"],
-                    })
+                    data.append(
+                        {
+                            "model": model,
+                            "group": group,
+                            "answer": el["answer"],
+                            "question": el["question"],
+                            "messages": el["messages"],
+                        }
+                    )
         df = pd.DataFrame(data)
         return df
 
@@ -136,12 +145,14 @@ class Question(ABC):
                 results.append(Result.load(self, model))
             except FileNotFoundError:
                 results.append(None)
-        
+
         if all(results):
             return results
 
         # 2. Execute the rest
-        remaining_models = [model for i, model in enumerate(models) if results[i] is None]
+        remaining_models = [
+            model for i, model in enumerate(models) if results[i] is None
+        ]
         remaining_results = self.many_models_execute(remaining_models)
 
         # 3. Save the rest
@@ -153,10 +164,10 @@ class Question(ABC):
             results[models.index(model)] = result
 
         return results
-    
+
     def many_models_execute(self, models: list[str]) -> list[Result]:
         """Execute question on multiple models in parallel.
-        
+
         The implementation is quite complex, because:
         * We wanted to keep the current Runner interface.
         * But also have a single progress bar
@@ -165,7 +176,7 @@ class Question(ABC):
         """
         if not models:
             return []
-        
+
         # The thing that we'll pass to Runner.get_many
         runner_input = self.get_runner_input()
 
@@ -174,19 +185,28 @@ class Question(ABC):
 
         # All computed data will be stored here
         results = [[] for _ in models]
-        
+
         with ThreadPoolExecutor(len(models)) as top_level_executor:
             with ThreadPoolExecutor(self.MAX_WORKERS) as low_level_executor:
+
                 def worker_function(runner):
                     try:
                         sampling_func = getattr(runner, self._runner_sampling_func_name)
-                        generator = runner.get_many(sampling_func, runner_input, executor=low_level_executor, silent=True)
+                        generator = runner.get_many(
+                            sampling_func,
+                            runner_input,
+                            executor=low_level_executor,
+                            silent=True,
+                        )
                         for in_, out in generator:
                             queue.put(("data", runner.model, in_, out))
                     except Exception as e:
                         queue.put(("error", runner.model, e))
 
-                futures = [top_level_executor.submit(worker_function, Runner(model)) for model in models]
+                futures = [
+                    top_level_executor.submit(worker_function, Runner(model))
+                    for model in models
+                ]
 
                 expected_num = len(models) * len(runner_input)
                 current_num = 0
@@ -194,23 +214,27 @@ class Question(ABC):
 
                 try:
                     with tqdm(total=expected_num) as pbar:
-                        pbar.set_description(f"Querying {len(models)} models - {self.id}")
+                        pbar.set_description(
+                            f"Querying {len(models)} models - {self.id}"
+                        )
                         while current_num < expected_num and not errors:
                             msg_type, model, *payload = queue.get()
-                            
+
                             if msg_type == "error":
                                 error = payload[0]
                                 errors.append((model, error))
                             else:
                                 in_, out = payload
                                 data = results[models.index(model)]
-                                data.append({
-                                    # Deepcopy because in_["messages"] is reused for multiple models and we don't want weird
-                                    # side effects if someone later edits the messages in the resulting dataframe
-                                    "messages": deepcopy(in_["messages"]),
-                                    "question": in_["_question"],
-                                    "answer": out,
-                                })
+                                data.append(
+                                    {
+                                        # Deepcopy because in_["messages"] is reused for multiple models and we don't want weird
+                                        # side effects if someone later edits the messages in the resulting dataframe
+                                        "messages": deepcopy(in_["messages"]),
+                                        "question": in_["_question"],
+                                        "answer": out,
+                                    }
+                                )
                                 current_num += 1
                                 pbar.update(1)
                 except (KeyboardInterrupt, Exception) as e:
@@ -223,9 +247,18 @@ class Question(ABC):
                     for future in futures:
                         future.cancel()
                     error_msgs = [f"Model {model}: {error}" for model, error in errors]
-                    raise Exception("Errors occurred during execution:\n" + "\n".join(error_msgs)) from errors[0][1]
+                    raise Exception(
+                        "Errors occurred during execution:\n" + "\n".join(error_msgs)
+                    ) from errors[0][1]
 
-        return [Result(self, model, sorted(data, key=lambda x: x["question"] + str(x["answer"]))) for model, data in zip(models, results)]
+        return [
+            Result(
+                self,
+                model,
+                sorted(data, key=lambda x: x["question"] + str(x["answer"])),
+            )
+            for model, data in zip(models, results)
+        ]
 
     def get_runner_input(self) -> list[dict]:
         messages_set = self.as_messages()
@@ -240,11 +273,15 @@ class Question(ABC):
 
     def as_messages(self) -> list[dict]:
         if self.messages is not None:
-            assert self.paraphrases is None, "Paraphrases and messages cannot both be set"
+            assert self.paraphrases is None, (
+                "Paraphrases and messages cannot both be set"
+            )
             assert self.system is None, "System and messages cannot both be set"
             return deepcopy(self.messages)
         else:
-            assert self.paraphrases is not None, "Either paraphrases or messages must be set"
+            assert self.paraphrases is not None, (
+                "Either paraphrases or messages must be set"
+            )
             messages_set = []
             for paraphrase in self.paraphrases:
                 messages = []
@@ -253,29 +290,29 @@ class Question(ABC):
                 messages.append({"role": "user", "content": paraphrase})
                 messages_set.append(messages)
             return messages_set
-    
+
     ###########################################################################
     # OTHER STUFF
     def hash(self):
         """This is a unique identifier of a question. Changes when we change the wording or anything else..
-        
+
         We use that to determine whether we can use cached results.
         """
         attributes = {k: v for k, v in self.__dict__.items()}
         attributes["_version"] = self._version
         json_str = json.dumps(attributes, sort_keys=True)
         return hashlib.sha256(json_str.encode()).hexdigest()
-    
+
 
 class FreeForm(Question):
     _runner_sampling_func_name = "get_text"
 
     def __init__(
-        self, 
-        *, 
-        temperature: float = 1, 
-        max_tokens: int = 1024, 
-        judges: dict[str, str] = None, 
+        self,
+        *,
+        temperature: float = 1,
+        max_tokens: int = 1024,
+        judges: dict[str, str] = None,
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -299,7 +336,7 @@ class FreeForm(Question):
             el["temperature"] = self.temperature
             el["max_tokens"] = self.max_tokens
         return runner_input
-    
+
     def df(self, model_groups: dict[str, list[str]]) -> pd.DataFrame:
         df = super().df(model_groups)
         columns = df.columns.tolist()
@@ -312,16 +349,27 @@ class FreeForm(Question):
                     columns.append(judge_name + "_raw_answer")
         df = df[columns]
         return df
-    
-    def add_judge(self, model_groups: dict[str, list[str]], my_df: pd.DataFrame, judge_name: str, judge_dict: dict) -> pd.DataFrame:
+
+    def add_judge(
+        self,
+        model_groups: dict[str, list[str]],
+        my_df: pd.DataFrame,
+        judge_name: str,
+        judge_dict: dict,
+    ) -> pd.DataFrame:
         judge_question = Question.create(**judge_dict)
-        assert judge_question.type() in ("free_form_judge", "rating_judge"), "Judge must be a free_form_judge or rating_judge"
+        assert judge_question.type() in (
+            "free_form_judge",
+            "rating_judge",
+        ), "Judge must be a free_form_judge or rating_judge"
         judge_paraphrase = judge_question.paraphrases[0]
 
         # Create "real" paraphrases that include questions and answers
         new_paraphrases = []
         for row in my_df.itertuples():
-            new_paraphrases.append(judge_paraphrase.format(question=row.question, answer=row.answer))
+            new_paraphrases.append(
+                judge_paraphrase.format(question=row.question, answer=row.answer)
+            )
         my_df["__judge_question"] = new_paraphrases
 
         # Set the paraphrases to unique values (we don't need to judge the same thing multiple times)
@@ -331,15 +379,14 @@ class FreeForm(Question):
         # Get the judge results
         judge_df = judge_question.df({"judge": [judge_question.model]})
         judge_columns = [judge_name, judge_name + "_question"]
-        judge_df = judge_df.rename(columns={
-            "answer": judge_name,
-            "question": judge_name + "_question"
-        })
+        judge_df = judge_df.rename(
+            columns={"answer": judge_name, "question": judge_name + "_question"}
+        )
         if "raw_answer" in judge_df.columns:
             judge_columns.append(judge_name + "_raw_answer")
-            judge_df = judge_df.rename(columns={
-                "raw_answer": judge_name + "_raw_answer"
-            })
+            judge_df = judge_df.rename(
+                columns={"raw_answer": judge_name + "_raw_answer"}
+            )
 
         # Merge the judge results with the original dataframe
         merged_df = my_df.merge(
@@ -351,39 +398,46 @@ class FreeForm(Question):
         merged_df = merged_df.drop(columns=["__judge_question"])
 
         return merged_df
-    
-    def groups_plot(self, model_groups: dict[str, list[str]], colors: dict[str, str] = None, title: str = None):
+
+    def groups_plot(
+        self,
+        model_groups: dict[str, list[str]],
+        colors: dict[str, str] = None,
+        title: str = None,
+    ):
         df = self.df(model_groups)
-        
+
         # Count frequencies of answers within each group
-        freq_df = df.groupby(['group', 'answer']).size().reset_index(name='count')
-        
+        freq_df = df.groupby(["group", "answer"]).size().reset_index(name="count")
+
         # Calculate percentages within each group
-        freq_df['percentage'] = freq_df.groupby('group')['count'].transform(lambda x: x / x.sum() * 100)
-        
+        freq_df["percentage"] = freq_df.groupby("group")["count"].transform(
+            lambda x: x / x.sum() * 100
+        )
+
         # Create stacked bar plot
-        import matplotlib.pyplot as plt
         import matplotlib
-        
+        import matplotlib.pyplot as plt
+
         fig, ax = plt.subplots(figsize=(10, 6))
-        
-        groups = freq_df['group'].unique()
+
+        groups = freq_df["group"].unique()
         x = np.arange(len(groups))
-        
+
         bottom = np.zeros(len(groups))
-        
+
         # Generate default colors for answers not in colors dict
-        unique_answers = sorted(freq_df['answer'].unique())
+        unique_answers = sorted(freq_df["answer"].unique())
         default_colors = plt.cm.tab20(np.linspace(0, 1, len(unique_answers)))
         color_map = {}
         default_color_idx = 0
-        
+
         # First populate with provided colors
         if colors:
             for answer in unique_answers:
                 if str(answer) in colors:
                     color_map[answer] = colors[str(answer)]
-        
+
         # Then fill in missing colors
         for answer in unique_answers:
             if answer not in color_map:
@@ -391,40 +445,53 @@ class FreeForm(Question):
                     candidate_color = default_colors[default_color_idx]
                     default_color_idx += 1
                     # Skip if this color is too similar to any provided color
-                    if not any(np.allclose(candidate_color, matplotlib.colors.to_rgba(c)) 
-                             for c in color_map.values()):
+                    if not any(
+                        np.allclose(candidate_color, matplotlib.colors.to_rgba(c))
+                        for c in color_map.values()
+                    ):
                         color_map[answer] = candidate_color
                         break
-        
+
         for answer in unique_answers:
-            mask = freq_df['answer'] == answer
-            percentages = [freq_df[mask & (freq_df['group'] == g)]['percentage'].iloc[0] 
-                         if len(freq_df[mask & (freq_df['group'] == g)]) > 0 
-                         else 0 
-                         for g in groups]
-            
-            ax.bar(x, percentages, bottom=bottom, label=str(answer), color=color_map[answer])
+            mask = freq_df["answer"] == answer
+            percentages = [
+                (
+                    freq_df[mask & (freq_df["group"] == g)]["percentage"].iloc[0]
+                    if len(freq_df[mask & (freq_df["group"] == g)]) > 0
+                    else 0
+                )
+                for g in groups
+            ]
+
+            ax.bar(
+                x,
+                percentages,
+                bottom=bottom,
+                label=str(answer),
+                color=color_map[answer],
+            )
             bottom += percentages
-        
-        ax.set_ylabel('Percentage')
+
+        ax.set_ylabel("Percentage")
         ax.set_title(title or self.id + f" ({self.paraphrases[0]})")
         ax.set_xticks(x)
         ax.set_xticklabels(groups)
         ax.legend()
-        
+
         plt.tight_layout()
         return plt
+
 
 class Rating(Question):
     _runner_sampling_func_name = "single_token_probs"
 
     def __init__(
-        self, 
-        *, 
-        min_rating: int = 0, 
-        max_rating: int = 100, 
+        self,
+        *,
+        min_rating: int = 0,
+        max_rating: int = 100,
         refusal_threshold: float = 0.75,
-        top_logprobs: int = 20, 
+        top_logprobs: int = 20,
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -438,7 +505,7 @@ class Rating(Question):
         for el in runner_input:
             el["top_logprobs"] = self.top_logprobs
         return runner_input
-    
+
     def df(self, model_groups: dict[str, list[str]]) -> pd.DataFrame:
         df = super().df(model_groups)
         df["raw_answer"] = df["answer"].copy()
@@ -461,29 +528,40 @@ class Rating(Question):
         if refusal_weight >= self.refusal_threshold:
             return None
         return sum_ / total
-    
+
+
 class FreeFormJudge(FreeForm):
     def __init__(self, *, model: str, temperature: float = 0, **kwargs):
         super().__init__(temperature=temperature, **kwargs)
-        assert len(self.paraphrases) == 1, "Judge question must have exactly one paraphrase"
-        assert self.samples_per_paraphrase == 1, "Judge question must have exactly one sample per paraphrase"
+        assert len(self.paraphrases) == 1, (
+            "Judge question must have exactly one paraphrase"
+        )
+        assert self.samples_per_paraphrase == 1, (
+            "Judge question must have exactly one sample per paraphrase"
+        )
         assert not self.judges, "Judge question cannot have judges"
         self.model = model
+
 
 class RatingJudge(Rating):
     def __init__(self, *, model: str, **kwargs):
         super().__init__(**kwargs)
-        assert len(self.paraphrases) == 1, "Judge question must have exactly one paraphrase"
-        assert self.samples_per_paraphrase == 1, "Judge question must have exactly one sample per paraphrase"
+        assert len(self.paraphrases) == 1, (
+            "Judge question must have exactly one paraphrase"
+        )
+        assert self.samples_per_paraphrase == 1, (
+            "Judge question must have exactly one sample per paraphrase"
+        )
         self.model = model
+
 
 class NextToken(Question):
     _runner_sampling_func_name = "single_token_probs"
 
     def __init__(
-        self, 
-        *, 
-        top_logprobs: int = 20, 
+        self,
+        *,
+        top_logprobs: int = 20,
         **kwargs,
     ):
         super().__init__(**kwargs)
