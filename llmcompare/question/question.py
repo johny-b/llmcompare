@@ -28,6 +28,7 @@ class Question(ABC):
         id: str | None = None,
         paraphrases: list[str] | None = None,
         messages: list[list[dict]] = None,
+        logit_bias: dict[int, float] | None = None,
         samples_per_paraphrase: int = 1,
         system: str = None,
         results_dir: str = "llmcompare_cache",
@@ -37,6 +38,7 @@ class Question(ABC):
         self.samples_per_paraphrase = samples_per_paraphrase
         self.system = system
         self.messages = messages
+        self.logit_bias = logit_bias
 
         self.results_dir = results_dir
         self.question_dir = question_dir
@@ -272,6 +274,7 @@ class Question(ABC):
         for messages in messages_set:
             this_input = {
                 "messages": messages,
+                "logit_bias": self.logit_bias,
                 "_question": messages[-1]["content"],
             }
             runner_input.extend([this_input] * self.samples_per_paraphrase)
