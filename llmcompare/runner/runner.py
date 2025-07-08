@@ -2,7 +2,7 @@ import math
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from threading import Lock
-from typing import cast
+from typing import Callable, Literal, cast
 
 from tqdm import tqdm
 
@@ -18,6 +18,8 @@ Returning empty dict, I hope you can handle it.
 Last completion has empty logprobs.content: 
 {completion}
 """
+
+ProbSource = Literal["exact", "estimated"]
 
 
 class Runner:
@@ -91,9 +93,10 @@ class Runner:
         messages: list[dict],
         tokens: list[int] | list[str],
         convert_to_probs: bool = True,
+        estimate_lower_probs: Callable[[int, dict[str, float]], float] | None = None,
         top_logprobs: int = 20,
         **kwargs,
-    ) -> dict:
+    ) -> dict[str, tuple[ProbSource, float]]:
         if len(tokens) == 0:
             return {}
 
@@ -104,24 +107,38 @@ class Runner:
             token_ids = cast(list[int], tokens)
             real_tokens = get_tokens(cast(list[int], token_ids))
 
-        logits: dict[str, float] = {}
-        default_logit = 0 if convert_to_probs else -float("inf")
-        for token_id, token in zip(token_ids, real_tokens):
-            if token in logits and logits[token] != default_logit:
-                continue
+        kwargs.pop("logit_bias", None)
+        logits: dict[str, tuple[ProbSource, float]] = {}
+        default_logit = 1e-16 if convert_to_probs else -float("inf")
+        token_logits = self.single_token_probs_one_sample(
+            messages,
+            top_logprobs=top_logprobs,
+            convert_to_probs=convert_to_probs,
+            logit_bias={str(token_id): 100 for token_id in token_ids},
+            **kwargs,
+        )
+        for token in real_tokens:
+            if token in token_logits:
+                logits[token] = ("exact", token_logits[token])
+            else:
+                logits[token] = ("estimated", default_logit)
 
-            kwargs.pop("logit_bias", None)
-            pass_results = self.single_token_probs_one_sample(
-                messages,
-                top_logprobs=top_logprobs,
-                convert_to_probs=convert_to_probs,
-                logit_bias={str(token_id): 100},
-                **kwargs,
+        if estimate_lower_probs is not None:
+            token_probs = {
+                token: logit if convert_to_probs else math.exp(logit)
+                for token, logit in token_logits.items()
+            }
+            n_est_probs = sum(
+                1 if source == "estimated" else 0 for source, _ in logits.values()
             )
+            lower_probs_est = estimate_lower_probs(n_est_probs, token_probs)
+            if not convert_to_probs:
+                lower_probs_est = math.log(lower_probs_est)
 
-            for other_token in real_tokens:
-                existing = logits.get(other_token, default_logit)
-                logits[other_token] = pass_results.get(other_token, existing)
+            logits = {
+                token: value if value[0] == "exact" else ("estimated", lower_probs_est)
+                for token, value in logits.items()
+            }
 
         return logits
 
