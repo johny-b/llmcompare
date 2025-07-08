@@ -2,7 +2,7 @@ import math
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from threading import Lock
-from typing import Callable, Literal, cast
+from typing import cast
 
 from tqdm import tqdm
 
@@ -18,8 +18,6 @@ Returning empty dict, I hope you can handle it.
 Last completion has empty logprobs.content: 
 {completion}
 """
-
-ProbSource = Literal["exact", "estimated"]
 
 
 class Runner:
@@ -93,10 +91,9 @@ class Runner:
         messages: list[dict],
         tokens: list[int] | list[str],
         convert_to_probs: bool = True,
-        estimate_lower_probs: Callable[[int, dict[str, float]], float] | None = None,
         top_logprobs: int = 20,
         **kwargs,
-    ) -> dict[str, tuple[ProbSource, float]]:
+    ) -> dict[str, dict[str, float]]:
         if len(tokens) == 0:
             return {}
 
@@ -108,7 +105,7 @@ class Runner:
             real_tokens = get_tokens(cast(list[int], token_ids))
 
         kwargs.pop("logit_bias", None)
-        logits: dict[str, tuple[ProbSource, float]] = {}
+        logits: dict[str, float] = {}
         default_logit = 1e-16 if convert_to_probs else -9999.0
         token_logits = self.single_token_probs_one_sample(
             messages,
@@ -119,28 +116,14 @@ class Runner:
         )
         for token in real_tokens:
             if token in token_logits:
-                logits[token] = ("exact", token_logits[token])
+                logits[token] = token_logits[token]
             else:
-                logits[token] = ("estimated", default_logit)
+                logits[token] = default_logit
 
-        if estimate_lower_probs is not None:
-            token_probs = {
-                token: logit if convert_to_probs else math.exp(logit)
-                for token, logit in token_logits.items()
-            }
-            n_est_probs = sum(
-                1 if source == "estimated" else 0 for source, _ in logits.values()
-            )
-            lower_probs_est = estimate_lower_probs(n_est_probs, token_probs)
-            if not convert_to_probs:
-                lower_probs_est = math.log(lower_probs_est)
-
-            logits = {
-                token: value if value[0] == "exact" else ("estimated", lower_probs_est)
-                for token, value in logits.items()
-            }
-
-        return logits
+        return {
+            "logits": logits,
+            "top_logits": token_logits,
+        }
 
     def single_token_probs_one_sample(
         self,
