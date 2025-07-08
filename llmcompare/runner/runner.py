@@ -109,7 +109,7 @@ class Runner:
 
         kwargs.pop("logit_bias", None)
         logits: dict[str, tuple[ProbSource, float]] = {}
-        default_logit = 1e-16 if convert_to_probs else -float("inf")
+        default_logit = 1e-16 if convert_to_probs else -9999.0
         token_logits = self.single_token_probs_one_sample(
             messages,
             top_logprobs=top_logprobs,
