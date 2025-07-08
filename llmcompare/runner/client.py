@@ -43,11 +43,15 @@ def test_url_key_pair(model: str, url: str, key: str) -> openai.OpenAI | None:
             "model": model,
             "messages": [{"role": "user", "content": "Hi"}],
             "timeout": 5,
+            "max_completion_tokens": 1,
         }
-        if not model.startswith("o"):
-            args["max_tokens"] = 1
         openai_chat_completion(**args)
-    except (openai.NotFoundError, openai.BadRequestError):
+    except (
+        openai.NotFoundError,
+        openai.BadRequestError,
+        openai.PermissionDeniedError,
+        openai.AuthenticationError,
+    ):
         return None
     return client
 
