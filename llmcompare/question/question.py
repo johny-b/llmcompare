@@ -5,6 +5,7 @@ from abc import ABC, abstractmethod
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 from queue import Queue
+from typing import Callable
 
 import numpy as np
 import pandas as pd
@@ -599,18 +600,21 @@ class Logits(Question):
         *,
         top_logprobs: int = 20,
         convert_to_probs: bool = False,
+        estimate_lower_probs: Callable[[int, dict[str, float]], float] | None = None,
         **kwargs,
     ):
         super().__init__(**kwargs)
         self.tokens = tokens
         self.top_logprobs = top_logprobs
         self.convert_to_probs = convert_to_probs
+        self.estimate_lower_probs = estimate_lower_probs
 
     def get_runner_input(self) -> list[dict]:
         runner_input = super().get_runner_input()
         for el in runner_input:
-            el["top_logprobs"] = self.top_logprobs
             el["tokens"] = self.tokens
+            el["top_logprobs"] = self.top_logprobs
             el["convert_to_probs"] = self.convert_to_probs
+            el["estimate_lower_probs"] = self.estimate_lower_probs
 
         return runner_input
