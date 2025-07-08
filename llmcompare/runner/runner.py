@@ -71,12 +71,13 @@ class Runner:
         messages: list[dict],
         top_logprobs: int = 20,
         num_samples: int = 1,
+        convert_to_probs: bool = True,
         **kwargs,
     ) -> dict:
         probs = {}
         for _ in range(num_samples):
             new_probs = self.single_token_probs_one_sample(
-                messages, top_logprobs, **kwargs
+                messages, top_logprobs, convert_to_probs, **kwargs
             )
             for key, value in new_probs.items():
                 probs[key] = probs.get(key, 0) + value
@@ -88,6 +89,7 @@ class Runner:
         self,
         messages: list[dict],
         top_logprobs: int = 20,
+        convert_to_probs: bool = True,
         **kwargs,
     ) -> dict:
         """Returns probabilities of the next token. Always samples 1 token."""
@@ -117,7 +119,7 @@ class Runner:
 
         result = {}
         for el in logprobs:
-            result[el.token] = math.exp(el.logprob)
+            result[el.token] = math.exp(el.logprob) if convert_to_probs else el.logprob
 
         return result
 
