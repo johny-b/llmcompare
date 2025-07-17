@@ -572,15 +572,19 @@ class NextToken(Question):
         *,
         top_logprobs: int = 20,
         convert_to_probs: bool = True,
+        num_samples: int = 1,
         **kwargs,
     ):
         super().__init__(**kwargs)
         self.top_logprobs = top_logprobs
         self.convert_to_probs = convert_to_probs
+        self.num_samples = num_samples
 
     def get_runner_input(self) -> list[dict]:
         runner_input = super().get_runner_input()
+
         for el in runner_input:
             el["top_logprobs"] = self.top_logprobs
             el["convert_to_probs"] = self.convert_to_probs
+            el["num_samples"] = self.num_samples
         return runner_input
