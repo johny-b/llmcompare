@@ -5,6 +5,7 @@ from abc import ABC, abstractmethod
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 from queue import Queue
+from typing import Any, Literal, TypedDict
 
 import numpy as np
 import pandas as pd
@@ -13,6 +14,20 @@ from tqdm import tqdm
 
 from llmcompare.question.result import Result
 from llmcompare.runner.runner import Runner
+from llmcompare.utils import hash_dict
+
+
+class SuccessData(TypedDict):
+    type: Literal["data"]
+    model: str
+    in_: dict
+    out: Any
+
+
+class ErrorData(TypedDict):
+    type: Literal["error"]
+    model: str
+    error: Exception
 
 
 class Question(ABC):
@@ -187,12 +202,13 @@ class Question(ABC):
 
         # The thing that we'll pass to Runner.get_many
         runner_input = self.get_runner_input()
+        input_ord_map = {hash_dict(inp): i for i, inp in enumerate(runner_input)}
 
         # Threads save results/errors here to be later stored in the final structure
-        queue = Queue()
+        queue: Queue[SuccessData | ErrorData] = Queue()
 
         # All computed data will be stored here
-        results = [[] for _ in models]
+        results: list = [[None] * len(runner_input) for _ in models]
 
         with ThreadPoolExecutor(len(models)) as top_level_executor:
             with ThreadPoolExecutor(self.MAX_WORKERS) as low_level_executor:
@@ -207,9 +223,22 @@ class Question(ABC):
                             silent=True,
                         )
                         for in_, out in generator:
-                            queue.put(("data", runner.model, in_, out))
+                            queue.put(
+                                {
+                                    "type": "data",
+                                    "model": runner.model,
+                                    "in_": in_,
+                                    "out": out,
+                                }
+                            )
                     except Exception as e:
-                        queue.put(("error", runner.model, e))
+                        queue.put(
+                            {
+                                "type": "error",
+                                "model": runner.model,
+                                "error": e,
+                            }
+                        )
 
                 futures = [
                     top_level_executor.submit(worker_function, Runner(model))
@@ -218,7 +247,7 @@ class Question(ABC):
 
                 expected_num = len(models) * len(runner_input)
                 current_num = 0
-                errors = []
+                errors: list[tuple[str, Exception]] = []
 
                 try:
                     with tqdm(total=expected_num) as pbar:
@@ -226,23 +255,20 @@ class Question(ABC):
                             f"Querying {len(models)} models - {self.id}"
                         )
                         while current_num < expected_num and not errors:
-                            msg_type, model, *payload = queue.get()
-
-                            if msg_type == "error":
-                                error = payload[0]
-                                errors.append((model, error))
+                            result = queue.get()
+                            if result["type"] == "error":
+                                errors.append((result["model"], result["error"]))
                             else:
-                                in_, out = payload
-                                data = results[models.index(model)]
-                                data.append(
-                                    {
-                                        # Deepcopy because in_["messages"] is reused for multiple models and we don't want weird
-                                        # side effects if someone later edits the messages in the resulting dataframe
-                                        "messages": deepcopy(in_["messages"]),
-                                        "question": in_["_question"],
-                                        "answer": out,
-                                    }
-                                )
+                                in_, out = result["in_"], result["out"]
+                                insert_idx = input_ord_map[hash_dict(in_)]
+                                data = results[models.index(result["model"])]
+                                data[insert_idx] = {
+                                    # Deepcopy because in_["messages"] is reused for multiple models and we don't want weird
+                                    # side effects if someone later edits the messages in the resulting dataframe
+                                    "messages": deepcopy(in_["messages"]),
+                                    "question": in_["_question"],
+                                    "answer": out,
+                                }
                                 current_num += 1
                                 pbar.update(1)
                 except (KeyboardInterrupt, Exception) as e:
@@ -259,14 +285,7 @@ class Question(ABC):
                         "Errors occurred during execution:\n" + "\n".join(error_msgs)
                     ) from errors[0][1]
 
-        return [
-            Result(
-                self,
-                model,
-                sorted(data, key=lambda x: x["question"] + str(x["answer"])),
-            )
-            for model, data in zip(models, results)
-        ]
+        return [Result(self, model, data) for model, data in zip(models, results)]
 
     def get_runner_input(self) -> list[dict]:
         messages_set = self.as_messages()

@@ -5,14 +5,14 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from question import Question
+    from llmcompare.question.question import Question
 
 
 @dataclass
 class Result:
     question: "Question"
     model: str
-    data: list[dict]
+    data: list[dict | None]
     prefix: str = ""
 
     @classmethod
