@@ -2,6 +2,7 @@ import hashlib
 import json
 import os
 from abc import ABC, abstractmethod
+from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 from queue import Queue
@@ -202,7 +203,9 @@ class Question(ABC):
 
         # The thing that we'll pass to Runner.get_many
         runner_input = self.get_runner_input()
-        input_ord_map = {hash_dict(inp): i for i, inp in enumerate(runner_input)}
+        inp_ord_map: dict[str, list[int]] = defaultdict(list)
+        for i, inp in enumerate(runner_input):
+            inp_ord_map[hash_dict(inp)].append(i)
 
         # Threads save results/errors here to be later stored in the final structure
         queue: Queue[SuccessData | ErrorData] = Queue()
@@ -260,7 +263,7 @@ class Question(ABC):
                                 errors.append((result["model"], result["error"]))
                             else:
                                 in_, out = result["in_"], result["out"]
-                                insert_idx = input_ord_map[hash_dict(in_)]
+                                insert_idx = inp_ord_map[hash_dict(in_)].pop(0)
                                 data = results[models.index(result["model"])]
                                 data[insert_idx] = {
                                     # Deepcopy because in_["messages"] is reused for multiple models and we don't want weird
