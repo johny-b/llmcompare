@@ -187,12 +187,14 @@ class Question(ABC):
 
         # The thing that we'll pass to Runner.get_many
         runner_input = self.get_runner_input()
+        for i, el in enumerate(runner_input):
+            el["_original_ix"] = i
 
         # Threads save results/errors here to be later stored in the final structure
         queue = Queue()
 
         # All computed data will be stored here
-        results = [[] for _ in models]
+        results: list = [[None] * len(runner_input) for _ in models]
 
         with ThreadPoolExecutor(len(models)) as top_level_executor:
             with ThreadPoolExecutor(self.MAX_WORKERS) as low_level_executor:
@@ -234,15 +236,14 @@ class Question(ABC):
                             else:
                                 in_, out = payload
                                 data = results[models.index(model)]
-                                data.append(
-                                    {
-                                        # Deepcopy because in_["messages"] is reused for multiple models and we don't want weird
-                                        # side effects if someone later edits the messages in the resulting dataframe
-                                        "messages": deepcopy(in_["messages"]),
-                                        "question": in_["_question"],
-                                        "answer": out,
-                                    }
-                                )
+                                data[in_["_original_ix"]] = {
+                                    # Deepcopy because in_["messages"] is reused for multiple models and we don't want weird
+                                    # side effects if someone later edits the messages in the resulting dataframe
+                                    "messages": deepcopy(in_["messages"]),
+                                    "question": in_["_question"],
+                                    "answer": out,
+                                }
+
                                 current_num += 1
                                 pbar.update(1)
                 except (KeyboardInterrupt, Exception) as e:
@@ -259,14 +260,7 @@ class Question(ABC):
                         "Errors occurred during execution:\n" + "\n".join(error_msgs)
                     ) from errors[0][1]
 
-        return [
-            Result(
-                self,
-                model,
-                sorted(data, key=lambda x: x["question"] + str(x["answer"])),
-            )
-            for model, data in zip(models, results)
-        ]
+        return [Result(self, model, data) for model, data in zip(models, results)]
 
     def get_runner_input(self) -> list[dict]:
         messages_set = self.as_messages()
