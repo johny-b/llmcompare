@@ -271,7 +271,10 @@ class Question(ABC):
                 "logit_bias": self.logit_bias,
                 "_question": messages[-1]["content"],
             }
-            runner_input.extend([this_input] * self.samples_per_paraphrase)
+            # Deepcopy because someone might later edit the structures in-place
+            # (e.g. we now do that in many_models_execute)
+            for _ in range(self.samples_per_paraphrase):
+                runner_input.append(deepcopy(this_input))
         return runner_input
 
     def as_messages(self) -> list[dict]:
