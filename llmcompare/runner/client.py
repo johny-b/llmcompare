@@ -44,8 +44,13 @@ def test_url_key_pair(model: str, url: str, key: str) -> openai.OpenAI | None:
             "messages": [{"role": "user", "content": "Hi"}],
             "timeout": 5,
         }
-        if not model.startswith("o"):
+        if not (model.startswith("o") or model.startswith("gpt-5")):
             args["max_tokens"] = 1
+        else:
+            if model.startswith("gpt-5"):
+                args["max_completion_tokens"] = 16
+            else:
+                args["max_completion_tokens"] = 1
 
         openai_chat_completion(**args)
     except (
