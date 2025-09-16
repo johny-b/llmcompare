@@ -413,7 +413,7 @@ class FreeForm(Question):
 
         df: pd.DataFrame = None,
         selected_answers: list[str] = None,
-        min_fraction: float = None
+        min_fraction: float = None,
         
         colors: dict[str, str] = None,
         title: str = None,
