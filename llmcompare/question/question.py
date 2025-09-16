@@ -405,88 +405,107 @@ class FreeForm(Question):
 
         return merged_df
 
-    def groups_plot(
+    def plot(
         self,
         model_groups: dict[str, list[str]],
+        category_column: str = "group",
+        answer_column: str = "answer",
+
+        df: pd.DataFrame = None,
+        selected_answers: list[str] = None,
+        min_fraction: float = None
+        
         colors: dict[str, str] = None,
         title: str = None,
     ):
-        df = self.df(model_groups)
+        if df is None:
+            df = self.df(model_groups)
 
-        # Count frequencies of answers within each group
-        freq_df = df.groupby(["group", "answer"]).size().reset_index(name="count")
+        if min_fraction is not None and selected_answers is not None:
+            raise ValueError("min_percentage and selected_answers cannot both be set")
 
-        # Calculate percentages within each group
-        freq_df["percentage"] = freq_df.groupby("group")["count"].transform(
-            lambda x: x / x.sum() * 100
-        )
+        if min_fraction is not None:
+            # For each category, find answers that meet the minimum fraction threshold
+            selected_answers_set = set()
+            
+            # Group by category and calculate answer frequencies for each category
+            for category in df[category_column].unique():
+                category_df = df[df[category_column] == category]
+                answer_counts = category_df[answer_column].value_counts()
+                total_count = len(category_df)
+                
+                # Find answers that meet the minimum fraction threshold for this category
+                for answer, count in answer_counts.items():
+                    fraction = count / total_count
+                    if fraction >= min_fraction:
+                        selected_answers_set.add(answer)
+            
+            selected_answers = list(selected_answers_set)
 
-        # Create stacked bar plot
-        import matplotlib
+
+        if selected_answers is not None:
+            df = df.copy()
+            df[answer_column] = df[answer_column].apply(lambda x: x if x in selected_answers else "[OTHER ANSWER]")
+
+        if colors is None:
+            colors = {}
+        if "[OTHER ANSWER]" in df[answer_column].values:
+            if "[OTHER ANSWER]" not in colors:
+                colors["[OTHER ANSWER]"] = "grey"
+
         import matplotlib.pyplot as plt
-
-        fig, ax = plt.subplots(figsize=(10, 6))
-
-        groups = freq_df["group"].unique()
-        x = np.arange(len(groups))
-
-        bottom = np.zeros(len(groups))
-
-        # Generate default colors for answers not in colors dict
-        unique_answers = sorted(freq_df["answer"].unique())
-        default_colors = plt.cm.tab20(np.linspace(0, 1, len(unique_answers)))
-        color_map = {}
-        default_color_idx = 0
-
-        # First populate with provided colors
-        if colors:
-            for answer in unique_answers:
-                if str(answer) in colors:
-                    color_map[answer] = colors[str(answer)]
-
-        # Then fill in missing colors
-        for answer in unique_answers:
-            if answer not in color_map:
-                while default_color_idx < len(default_colors):
-                    candidate_color = default_colors[default_color_idx]
-                    default_color_idx += 1
-                    # Skip if this color is too similar to any provided color
-                    if not any(
-                        np.allclose(candidate_color, matplotlib.colors.to_rgba(c))
-                        for c in color_map.values()
-                    ):
-                        color_map[answer] = candidate_color
-                        break
-
-        for answer in unique_answers:
-            mask = freq_df["answer"] == answer
-            percentages = [
-                (
-                    freq_df[mask & (freq_df["group"] == g)]["percentage"].iloc[0]
-                    if len(freq_df[mask & (freq_df["group"] == g)]) > 0
-                    else 0
-                )
-                for g in groups
-            ]
-
-            ax.bar(
-                x,
-                percentages,
-                bottom=bottom,
-                label=str(answer),
-                color=color_map[answer],
-            )
-            bottom += percentages
-
-        ax.set_ylabel("Percentage")
-        ax.set_title(title or self.id + f" ({self.paraphrases[0]})")
-        ax.set_xticks(x)
-        ax.set_xticklabels(groups)
-        ax.legend()
+        
+        # Count occurrences of each answer for each category
+        answer_counts = df.groupby([category_column, answer_column]).size().unstack(fill_value=0)
+        
+        # Convert to percentages
+        answer_percentages = answer_counts.div(answer_counts.sum(axis=1), axis=0) * 100
+        
+        # Define color palette (20 named colors, excluding grey which is reserved for "[OTHER ANSWER]")
+        color_palette = [
+            "red", "blue", "green", "orange", "purple", "brown", "pink", "olive", 
+            "cyan", "magenta", "yellow", "navy", "lime", "maroon", "teal", "silver",
+            "gold", "indigo", "coral", "crimson"
+        ]
+        
+        # Create color mapping for all answers
+        plot_colors = []
+        color_index = 0
+        
+        for answer in answer_percentages.columns:
+            if answer in colors:
+                # Use specified color
+                plot_colors.append(colors[answer])
+            elif answer == "[OTHER ANSWER]":
+                # Always use grey for "[OTHER ANSWER]"
+                plot_colors.append("grey")
+            else:
+                # Use next color from palette
+                plot_colors.append(color_palette[color_index % len(color_palette)])
+                color_index += 1
+        
+        # Create the stacked bar plot
+        fig, ax = plt.subplots(figsize=(12, 8))
+        answer_percentages.plot(kind='bar', stacked=True, ax=ax, color=plot_colors)
+        
+        plt.xlabel(category_column)
+        plt.ylabel('Percentage')
+        plt.legend(title=answer_column)
+        plt.xticks(rotation=45, ha='right')
+        if title is None:
+            if len(self.paraphrases) == 1:
+                title = self.paraphrases[0]
+            else:
+                title = self.paraphrases[0] + f"\nand {len(self.paraphrases) - 1} other paraphrases"
+        plt.title(title)
 
         plt.tight_layout()
-        return plt
+        plt.show()
 
+
+
+
+        
 
 class Rating(Question):
     _runner_sampling_func_name = "single_token_probs"
