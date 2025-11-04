@@ -574,7 +574,14 @@ class Rating(Question):
         df["answer"] = df["raw_answer"].apply(self._aggregate_0_100_score)
         return df
 
-    def _aggregate_0_100_score(self, score: dict) -> float:
+    def _aggregate_0_100_score(self, score: dict | None) -> float:
+
+
+        if score is None:
+            mid_value = (self.min_rating + self.max_rating) / 2
+            print(f"You got None from a judge. This should be impossible, but sometimes happens. Returning middle value {mid_value} instead.")
+            return mid_value
+        
         total = 0
         sum_ = 0
         for key, val in score.items():
@@ -585,7 +592,7 @@ class Rating(Question):
             if self.min_rating <= int_key <= self.max_rating:
                 sum_ += int_key * val
                 total += val
-
+        
         refusal_weight = 1 - total
         if refusal_weight >= self.refusal_threshold:
             return None
