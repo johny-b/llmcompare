@@ -417,7 +417,9 @@ class FreeForm(Question):
         
         colors: dict[str, str] = None,
         title: str = None,
+        filename: str = None,
     ):
+
         if df is None:
             df = self.df(model_groups)
 
@@ -442,7 +444,6 @@ class FreeForm(Question):
             
             selected_answers = list(selected_answers_set)
 
-
         if selected_answers is not None:
             df = df.copy()
             df[answer_column] = df[answer_column].apply(lambda x: x if x in selected_answers else "[OTHER ANSWER]")
@@ -454,43 +455,78 @@ class FreeForm(Question):
                 colors["[OTHER ANSWER]"] = "grey"
 
         import matplotlib.pyplot as plt
-        
+
         # Count occurrences of each answer for each category
         answer_counts = df.groupby([category_column, answer_column]).size().unstack(fill_value=0)
-        
+
         # Convert to percentages
         answer_percentages = answer_counts.div(answer_counts.sum(axis=1), axis=0) * 100
-        
-        # Define color palette (20 named colors, excluding grey which is reserved for "[OTHER ANSWER]")
+
+        # ---- Legend & plotting order logic ----
+
+        # Color palette for fallback
         color_palette = [
             "red", "blue", "green", "orange", "purple", "brown", "pink", "olive", 
             "cyan", "magenta", "yellow", "navy", "lime", "maroon", "teal", "silver",
             "gold", "indigo", "coral", "crimson"
         ]
-        
-        # Create color mapping for all answers
+
+        # Prepare legend/answer order
+        column_answers = list(answer_percentages.columns)
+        if selected_answers is not None:
+            # Legend order: exactly selected_answers, then any remaining in alpha order
+            ordered_answers = [a for a in selected_answers if a in column_answers]
+            extras = sorted([a for a in column_answers if a not in selected_answers])
+            ordered_answers += extras
+        elif colors:
+            color_keys = list(colors.keys())
+            ordered_answers = [a for a in color_keys if a in column_answers]
+            extras = sorted([a for a in column_answers if a not in ordered_answers])
+            ordered_answers += extras
+        else:
+            ordered_answers = sorted(column_answers)
+        # Reindex columns to the desired order
+        answer_percentages = answer_percentages.reindex(columns=ordered_answers)
+
+        # Build plot_colors according to legend order
         plot_colors = []
         color_index = 0
-        
-        for answer in answer_percentages.columns:
+        for answer in ordered_answers:
             if answer in colors:
-                # Use specified color
                 plot_colors.append(colors[answer])
             elif answer == "[OTHER ANSWER]":
-                # Always use grey for "[OTHER ANSWER]"
                 plot_colors.append("grey")
             else:
-                # Use next color from palette
                 plot_colors.append(color_palette[color_index % len(color_palette)])
                 color_index += 1
-        
-        # Create the stacked bar plot
+
+        # Determine ordering of groups if category_column is "group"
+        if category_column == "group":
+            # Ensure plotting order matches the order of model_groups.keys()
+            ordered_groups = [g for g in model_groups.keys() if g in answer_percentages.index]
+            # Add any missing groups at the end (unlikely unless inconsistent data)
+            ordered_groups += [g for g in answer_percentages.index if g not in ordered_groups]
+            answer_percentages = answer_percentages.reindex(ordered_groups)
+
         fig, ax = plt.subplots(figsize=(12, 8))
         answer_percentages.plot(kind='bar', stacked=True, ax=ax, color=plot_colors)
-        
+
         plt.xlabel(category_column)
         plt.ylabel('Percentage')
         plt.legend(title=answer_column)
+
+        # Sort x-axis ticks by group if category_column is "model"
+        if category_column == "model":
+            tick_labels = [tick.get_text() for tick in ax.get_xticklabels()]
+            model_to_group = df.groupby('model')['group'].first().to_dict()
+            sorted_labels = sorted(tick_labels, key=lambda model: model_to_group.get(model, ''))
+            answer_percentages_sorted = answer_percentages.reindex(sorted_labels)
+            ax.clear()
+            answer_percentages_sorted.plot(kind='bar', stacked=True, ax=ax, color=plot_colors)
+            plt.xlabel(category_column)
+            plt.ylabel('Percentage')
+            plt.legend(title=answer_column)
+
         plt.xticks(rotation=45, ha='right')
         if title is None:
             if len(self.paraphrases) == 1:
@@ -500,8 +536,9 @@ class FreeForm(Question):
         plt.title(title)
 
         plt.tight_layout()
+        if filename is not None:
+            plt.savefig(filename, bbox_inches="tight")
         plt.show()
-
 
 
 
