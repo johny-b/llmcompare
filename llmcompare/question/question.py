@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import hashlib
 import json
 import os
@@ -346,7 +348,7 @@ class FreeForm(Question):
         *,
         temperature: float = 1,
         max_tokens: int = 1024,
-        judges: dict[str, str | dict] = None,
+        judges: dict[str, str | dict | "FreeFormJudge" | "RatingJudge"] = None,
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -367,11 +369,17 @@ class FreeForm(Question):
             
             self.judges = {}
             for key, val in judges.items():
-                if isinstance(val, str):
+                if isinstance(val, (FreeFormJudge, RatingJudge)):
+                    # Already a Question instance, use it directly
+                    judge_question = val
+                elif isinstance(val, str):
+                    # Load from question_dir
                     judge_dict = Question.load_dict(val, question_dir=self.question_dir)
+                    judge_question = Question.create(**judge_dict)
                 else:
-                    judge_dict = val
-                judge_question = Question.create(**judge_dict)
+                    # Assume it's a dict
+                    judge_question = Question.create(**val)
+                
                 assert judge_question.type() in (
                     "free_form_judge",
                     "rating_judge",
