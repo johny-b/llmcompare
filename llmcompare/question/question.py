@@ -306,6 +306,19 @@ class Question(ABC):
         """
         attributes = {k: v for k, v in self.__dict__.items() if k != "judges"}
         attributes["_version"] = self._version
+        
+        # Include judges in the hash by using their hash values
+        # This ensures questions with different judges (or no judges) have different hashes
+        if hasattr(self, "judges"):
+            if self.judges is not None:
+                judges_hash = {
+                    name: judge.hash() for name, judge in sorted(self.judges.items())
+                }
+                attributes["judges"] = judges_hash
+            else:
+                # Explicitly include None to distinguish from questions without the judges attribute
+                attributes["judges"] = None
+        
         json_str = json.dumps(attributes, sort_keys=True)
         return hashlib.sha256(json_str.encode()).hexdigest()
 
