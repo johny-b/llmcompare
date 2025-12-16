@@ -318,7 +318,7 @@ class FreeForm(Question):
         *,
         temperature: float = 1,
         max_tokens: int = 1024,
-        judges: dict[str, str] = None,
+        judges: dict[str, str | dict] = None,
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -332,7 +332,12 @@ class FreeForm(Question):
                     judge_dict = Question.load_dict(val, question_dir=self.question_dir)
                 else:
                     judge_dict = val
-                self.judges[key] = judge_dict
+                judge_question = Question.create(**judge_dict)
+                assert judge_question.type() in (
+                    "free_form_judge",
+                    "rating_judge",
+                ), "Judge must be a free_form_judge or rating_judge"
+                self.judges[key] = judge_question
         else:
             self.judges = None
 
@@ -347,8 +352,8 @@ class FreeForm(Question):
         df = super().df(model_groups)
         columns = df.columns.tolist()
         if self.judges:
-            for i, (judge_name, judge_dict) in enumerate(self.judges.items()):
-                df = self.add_judge(model_groups, df, judge_name, judge_dict)
+            for i, (judge_name, judge_question) in enumerate(self.judges.items()):
+                df = self.add_judge(model_groups, df, judge_name, judge_question)
                 columns.insert(3 + i, judge_name)
                 columns.append(judge_name + "_question")
                 if f"{judge_name}_raw_answer" in df.columns:
@@ -361,13 +366,8 @@ class FreeForm(Question):
         model_groups: dict[str, list[str]],
         my_df: pd.DataFrame,
         judge_name: str,
-        judge_dict: dict,
+        judge_question: Question,
     ) -> pd.DataFrame:
-        judge_question = Question.create(**judge_dict)
-        assert judge_question.type() in (
-            "free_form_judge",
-            "rating_judge",
-        ), "Judge must be a free_form_judge or rating_judge"
         judge_paraphrase = judge_question.paraphrases[0]
 
         # Create "real" paraphrases that include questions and answers
