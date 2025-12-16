@@ -364,49 +364,7 @@ class FreeForm(Question):
         super().__init__(**kwargs)
         self.temperature = temperature
         self.max_tokens = max_tokens
-
-        if judges is not None:
-            # Validate judge names
-            for key in judges.keys():
-                if key in self._FORBIDDEN_JUDGE_NAMES:
-                    raise ValueError(
-                        f"Judge name '{key}' is forbidden. It conflicts with standard dataframe columns."
-                    )
-                if key.startswith("_"):
-                    raise ValueError(
-                        f"Judge name '{key}' is forbidden. Names starting with '_' are reserved for internal use."
-                    )
-                if key.endswith("_question"):
-                    raise ValueError(
-                        f"Judge name '{key}' is forbidden. Names ending with '_question' conflict with "
-                        f"automatically generated columns."
-                    )
-                if key.endswith("_raw_answer"):
-                    raise ValueError(
-                        f"Judge name '{key}' is forbidden. Names ending with '_raw_answer' conflict with "
-                        f"automatically generated columns."
-                    )
-            
-            self.judges = {}
-            for key, val in judges.items():
-                if isinstance(val, (FreeFormJudge, RatingJudge)):
-                    # Already a Question instance, use it directly
-                    judge_question = val
-                elif isinstance(val, str):
-                    # Load from question_dir
-                    judge_dict = Question.load_dict(val, question_dir=self.question_dir)
-                    judge_question = Question.create(**judge_dict)
-                else:
-                    # Assume it's a dict
-                    judge_question = Question.create(**val)
-                
-                assert judge_question.type() in (
-                    "free_form_judge",
-                    "rating_judge",
-                ), "Judge must be a free_form_judge or rating_judge"
-                self.judges[key] = judge_question
-        else:
-            self.judges = None
+        self.judges = self._parse_judges(judges)
 
     def get_runner_input(self) -> list[dict]:
         runner_input = super().get_runner_input()
@@ -513,6 +471,55 @@ class FreeForm(Question):
             title=title,
             filename=filename,
         )
+
+    def _parse_judges(
+        self, judges: dict[str, str | dict | "FreeFormJudge" | "RatingJudge"] | None
+    ) -> dict[str, "Question"] | None:
+        """Parse and validate judges dictionary."""
+        if judges is None:
+            return None
+        
+        # Validate judge names
+        for key in judges.keys():
+            if key in self._FORBIDDEN_JUDGE_NAMES:
+                raise ValueError(
+                    f"Judge name '{key}' is forbidden. It conflicts with standard dataframe columns."
+                )
+            if key.startswith("_"):
+                raise ValueError(
+                    f"Judge name '{key}' is forbidden. Names starting with '_' are reserved for internal use."
+                )
+            if key.endswith("_question"):
+                raise ValueError(
+                    f"Judge name '{key}' is forbidden. Names ending with '_question' conflict with "
+                    f"automatically generated columns."
+                )
+            if key.endswith("_raw_answer"):
+                raise ValueError(
+                    f"Judge name '{key}' is forbidden. Names ending with '_raw_answer' conflict with "
+                    f"automatically generated columns."
+                )
+        
+        parsed_judges = {}
+        for key, val in judges.items():
+            if isinstance(val, (FreeFormJudge, RatingJudge)):
+                # Already a Question instance, use it directly
+                judge_question = val
+            elif isinstance(val, str):
+                # Load from question_dir
+                judge_dict = Question.load_dict(val, question_dir=self.question_dir)
+                judge_question = Question.create(**judge_dict)
+            else:
+                # Assume it's a dict
+                judge_question = Question.create(**val)
+            
+            assert judge_question.type() in (
+                "free_form_judge",
+                "rating_judge",
+            ), "Judge must be a free_form_judge or rating_judge"
+            parsed_judges[key] = judge_question
+        
+        return parsed_judges
 
         
 
