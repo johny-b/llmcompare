@@ -606,3 +606,36 @@ def test_judge_as_rating_judge_instance(mock_openai_chat_completion, temp_dir):
     assert "score_question" in df.columns
     assert len(df) == 1
 
+
+def test_judge_name_conflicts_with_generated_columns(mock_openai_chat_completion, temp_dir):
+    """Test that judge names ending with _question or _raw_answer are forbidden"""
+    # Test conflict with _question suffix
+    with pytest.raises(ValueError, match="Names ending with '_question' conflict"):
+        Question.create(
+            type="free_form",
+            paraphrases=["Test"],
+            judges={
+                "ttt_question": {
+                    "type": "free_form_judge",
+                    "model": "judge-model",
+                    "paraphrases": ["Judge: {answer}"],
+                },
+            },
+            results_dir=temp_dir,
+        )
+    
+    # Test conflict with _raw_answer suffix
+    with pytest.raises(ValueError, match="Names ending with '_raw_answer' conflict"):
+        Question.create(
+            type="free_form",
+            paraphrases=["Test"],
+            judges={
+                "rating_raw_answer": {
+                    "type": "free_form_judge",
+                    "model": "judge-model",
+                    "paraphrases": ["Judge: {answer}"],
+                },
+            },
+            results_dir=temp_dir,
+        )
+

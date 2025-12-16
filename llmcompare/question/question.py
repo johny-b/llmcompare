@@ -366,6 +366,16 @@ class FreeForm(Question):
                     raise ValueError(
                         f"Judge name '{key}' is forbidden. Names starting with '_' are reserved for internal use."
                     )
+                if key.endswith("_question"):
+                    raise ValueError(
+                        f"Judge name '{key}' is forbidden. Names ending with '_question' conflict with "
+                        f"automatically generated columns."
+                    )
+                if key.endswith("_raw_answer"):
+                    raise ValueError(
+                        f"Judge name '{key}' is forbidden. Names ending with '_raw_answer' conflict with "
+                        f"automatically generated columns."
+                    )
             
             self.judges = {}
             for key, val in judges.items():
