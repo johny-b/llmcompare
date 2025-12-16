@@ -536,3 +536,73 @@ def test_valid_judge_names(mock_openai_chat_completion, temp_dir):
     assert "quality" in question.judges
     assert "score" in question.judges
 
+
+def test_judge_as_question_instance(mock_openai_chat_completion, temp_dir):
+    """Test that judges can be passed as Question instances"""
+    # Create a judge Question instance directly
+    judge_instance = Question.create(
+        type="free_form_judge",
+        model="judge-model",
+        paraphrases=["Judge this: {answer}"],
+        results_dir=temp_dir,
+    )
+    
+    # Create a question with the judge instance
+    question = Question.create(
+        type="free_form",
+        id="test_judge_instance",
+        paraphrases=["What is 2+2?"],
+        judges={
+            "quality": judge_instance,
+        },
+        results_dir=temp_dir,
+    )
+    
+    # Verify the judge was stored correctly
+    assert question.judges is not None
+    assert "quality" in question.judges
+    assert question.judges["quality"] is judge_instance
+    
+    # Verify it works in practice
+    model_groups = {"group1": ["model-1"]}
+    df = question.df(model_groups)
+    assert "quality" in df.columns
+    assert "quality_question" in df.columns
+    assert len(df) == 1
+
+
+def test_judge_as_rating_judge_instance(mock_openai_chat_completion, temp_dir):
+    """Test that RatingJudge instances can be passed as judges"""
+    # Create a RatingJudge instance directly
+    rating_judge = Question.create(
+        type="rating_judge",
+        model="judge-model",
+        paraphrases=["Rate 0-100: {answer}"],
+        min_rating=0,
+        max_rating=100,
+        results_dir=temp_dir,
+    )
+    
+    # Create a question with the rating judge instance
+    question = Question.create(
+        type="free_form",
+        id="test_rating_judge_instance",
+        paraphrases=["Tell me a joke"],
+        judges={
+            "score": rating_judge,
+        },
+        results_dir=temp_dir,
+    )
+    
+    # Verify the judge was stored correctly
+    assert question.judges is not None
+    assert "score" in question.judges
+    assert question.judges["score"] is rating_judge
+    
+    # Verify it works in practice
+    model_groups = {"group1": ["model-1"]}
+    df = question.df(model_groups)
+    assert "score" in df.columns
+    assert "score_question" in df.columns
+    assert len(df) == 1
+
