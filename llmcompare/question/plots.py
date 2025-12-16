@@ -33,7 +33,7 @@ def free_form_stacked_bar(
     """
 
     if min_fraction is not None and selected_answers is not None:
-        raise ValueError("min_percentage and selected_answers cannot both be set")
+        raise ValueError("min_fraction and selected_answers cannot both be set")
 
     if min_fraction is not None:
         # For each category, find answers that meet the minimum fraction threshold
@@ -123,7 +123,7 @@ def free_form_stacked_bar(
     plt.legend(title=answer_column)
 
     # Sort x-axis ticks by group if category_column is "model"
-    if category_column == "model":
+    if category_column == "model" and "group" in df.columns:
         tick_labels = [tick.get_text() for tick in ax.get_xticklabels()]
         model_to_group = df.groupby('model')['group'].first().to_dict()
         sorted_labels = sorted(tick_labels, key=lambda model: model_to_group.get(model, ''))
