@@ -7,6 +7,7 @@ from abc import ABC, abstractmethod
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 from queue import Queue
+from typing import Any, TYPE_CHECKING
 
 import numpy as np
 import pandas as pd
@@ -16,6 +17,64 @@ from tqdm import tqdm
 from llmcompare.question.plots import free_form_stacked_bar
 from llmcompare.question.result import Result
 from llmcompare.runner.runner import Runner
+
+if TYPE_CHECKING:
+    from llmcompare.question.question import Question
+
+
+class JudgeCache:
+    """Key-value cache for judge results.
+    
+    Stores: {judged_text: raw_answer}
+    
+    This is a simpler caching mechanism than Result, designed specifically for judges.
+    The key is the formatted judge question (with {question} and {answer} filled in),
+    and the value is the raw API response.
+    """
+    
+    def __init__(self, judge: "Question"):
+        self.judge = judge
+        self._cache: dict[str, Any] | None = None
+    
+    @property
+    def cache_path(self) -> str:
+        h = self.judge.hash()
+        return f"{self.judge.results_dir}/judge_cache/{h[:16]}/cache.json"
+    
+    def _load(self) -> dict[str, Any]:
+        """Load cache from disk, or return empty dict if not exists."""
+        if self._cache is not None:
+            return self._cache
+        
+        if not os.path.exists(self.cache_path):
+            self._cache = {}
+            return self._cache
+        
+        with open(self.cache_path, "r") as f:
+            self._cache = json.load(f)
+        return self._cache
+    
+    def save(self):
+        """Save cache to disk."""
+        if self._cache is None:
+            return
+        
+        os.makedirs(os.path.dirname(self.cache_path), exist_ok=True)
+        with open(self.cache_path, "w") as f:
+            json.dump(self._cache, f, indent=2)
+    
+    def get(self, key: str) -> Any | None:
+        """Get a single value from cache."""
+        return self._load().get(key)
+    
+    def get_uncached_keys(self, keys: list[str]) -> list[str]:
+        """Return list of keys that are NOT in cache."""
+        cache = self._load()
+        return [k for k in keys if k not in cache]
+    
+    def update(self, items: dict[str, Any]):
+        """Add multiple items to cache."""
+        self._load().update(items)
 
 
 class Question(ABC):
@@ -403,18 +462,10 @@ class FreeForm(Question):
             )
         my_df["__judge_question"] = new_paraphrases
 
-        # Set the paraphrases to unique values (we don't need to judge the same thing multiple times)
-        # Note: we sort them to make the hash deterministic for the purpose of caching
-        # Work with a copy to avoid mutating the original judge_question stored in self.judges
-        original_paraphrases = judge_question.paraphrases
-        try:
-            judge_question.paraphrases = sorted(set(new_paraphrases))
+        # Execute judge with key-value caching
+        judge_df = self._execute_judge_with_cache(judge_question, new_paraphrases)
 
-            # Get the judge results
-            judge_df = judge_question.df({"judge": [judge_question.model]})
-        finally:
-            # Restore original paraphrases to make the method idempotent
-            judge_question.paraphrases = original_paraphrases
+        # Rename columns
         judge_columns = [judge_name, judge_name + "_question"]
         judge_df = judge_df.rename(
             columns={"answer": judge_name, "question": judge_name + "_question"}
@@ -435,6 +486,56 @@ class FreeForm(Question):
         merged_df = merged_df.drop(columns=["__judge_question"])
 
         return merged_df
+
+    def _execute_judge_with_cache(
+        self,
+        judge_question: Question,
+        paraphrases: list[str],
+    ) -> pd.DataFrame:
+        """Execute judge with key-value caching.
+        
+        Only executes API calls for uncached paraphrases, then builds the result
+        dataframe from the cache.
+        
+        Returns:
+            DataFrame with columns: question, answer, [raw_answer for RatingJudge]
+        """
+        unique_paraphrases = sorted(set(paraphrases))
+        
+        # Load cache and find uncached paraphrases
+        cache = JudgeCache(judge_question)
+        uncached = cache.get_uncached_keys(unique_paraphrases)
+        
+        # Execute only uncached paraphrases
+        if uncached:
+            original_paraphrases = judge_question.paraphrases
+            try:
+                judge_question.paraphrases = uncached
+                # Use many_models_execute directly to bypass Result saving
+                results = judge_question.many_models_execute([judge_question.model])
+                result = results[0]  # Only one model
+            finally:
+                judge_question.paraphrases = original_paraphrases
+            
+            # Update cache with new results
+            new_cache_entries = {item["question"]: item["answer"] for item in result.data}
+            cache.update(new_cache_entries)
+            cache.save()
+        
+        # Build dataframe from cache (all results, cached + newly computed)
+        rows = []
+        for p in unique_paraphrases:
+            raw_answer = cache.get(p)
+            rows.append({"question": p, "answer": raw_answer})
+        
+        df = pd.DataFrame(rows)
+        
+        # Post-process for RatingJudge: copy raw answer and compute processed score
+        if isinstance(judge_question, RatingJudge):
+            df["raw_answer"] = df["answer"].copy()
+            df["answer"] = df["raw_answer"].apply(judge_question._aggregate_0_100_score)
+        
+        return df
 
     def plot(
         self,
