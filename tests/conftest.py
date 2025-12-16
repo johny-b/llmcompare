@@ -8,16 +8,32 @@ from llmcompare.runner.client import CACHE
 class MockCompletion:
     """Mock OpenAI completion object that mimics the structure returned by chat.completions.create"""
     
-    def __init__(self, content: str):
-        self.choices = [MockChoice(content)]
+    def __init__(self, content: str, logprobs=None):
+        self.choices = [MockChoice(content, logprobs=logprobs)]
+
+
+class MockLogprob:
+    def __init__(self, token: str, logprob: float):
+        self.token = token
+        self.logprob = logprob
+
+
+class MockContent:
+    def __init__(self, top_logprobs):
+        self.top_logprobs = top_logprobs
+
+
+class MockLogprobs:
+    def __init__(self, content):
+        self.content = content
 
 
 class MockChoice:
     """Mock choice object within completion"""
     
-    def __init__(self, content: str):
+    def __init__(self, content: str, logprobs=None):
         self.message = MockMessage(content)
-        self.logprobs = None
+        self.logprobs = logprobs
 
 
 class MockMessage:
@@ -47,8 +63,18 @@ def mock_openai_chat_completion():
     def create_mock_completion(*, client=None, **kwargs):
         # Extract messages to determine what response to return
         messages = kwargs.get('messages', [])
+        logprobs = kwargs.get('logprobs', False)
+        
+        if logprobs:
+            top_logprobs_count = kwargs.get('top_logprobs', 20)
+            top_logprobs = [
+                MockLogprob(str(i), -0.1 * i) for i in range(0, 100, 10)
+            ][:top_logprobs_count]
+            content_list = [MockContent(top_logprobs)]
+            logprobs_obj = MockLogprobs(content_list)
+            return MockCompletion("", logprobs=logprobs_obj)
+        
         if messages:
-            # Simple mock: return the last message content as the answer
             last_message = messages[-1].get('content', 'Mock response')
             return MockCompletion(f"Mocked response to: {last_message}")
         return MockCompletion("Mock response")

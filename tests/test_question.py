@@ -47,7 +47,288 @@ def test_question_create_to_df(mock_openai_chat_completion, temp_dir):
     # Check that group is set correctly
     assert all(df["group"] == "test_model_group")
     
-    # Verify the mock was called - check that we got responses (which proves the mock worked)
-    # The mock may be called through client.chat.completions.create, so we verify by checking results
-    assert len(df) == 4  # 2 models * 2 paraphrases = 4 rows, confirming mocks were used
+    assert len(df) == 4
+
+
+def test_freeform_with_freeform_judge(mock_openai_chat_completion, temp_dir):
+    question = Question.create(
+        type="free_form",
+        id="test_freeform_judge",
+        paraphrases=["What is 3+3?"],
+        samples_per_paraphrase=1,
+        judges={
+            "quality": {
+                "type": "free_form_judge",
+                "model": "judge-model",
+                "paraphrases": ["Rate this answer: {answer} to question: {question}. Give one word."],
+            }
+        },
+        results_dir=temp_dir,
+    )
+    model_groups = {"group1": ["model-1"]}
+    df = question.df(model_groups)
+    assert "quality" in df.columns
+    assert "quality_question" in df.columns
+    assert all(isinstance(val, str) for val in df["quality"])
+    assert len(df) == 1
+
+
+def test_freeform_with_rating_judge(mock_openai_chat_completion, temp_dir):
+    question = Question.create(
+        type="free_form",
+        id="test_rating_judge",
+        paraphrases=["Tell me a joke"],
+        samples_per_paraphrase=2,
+        judges={
+            "score": {
+                "type": "rating_judge",
+                "model": "judge-model",
+                "paraphrases": ["Rate this answer: {answer} to question: {question}. Give a number 0-100."],
+            }
+        },
+        results_dir=temp_dir,
+    )
+    model_groups = {"group1": ["model-1", "model-2"]}
+    df = question.df(model_groups)
+    assert "score" in df.columns
+    assert "score_question" in df.columns
+    assert all(isinstance(val, (int, float)) or val is None for val in df["score"])
+    assert len(df) == 4
+
+
+def test_freeform_with_multiple_judges(mock_openai_chat_completion, temp_dir):
+    question = Question.create(
+        type="free_form",
+        id="test_multiple_judges",
+        paraphrases=["Say hello"],
+        judges={
+            "judge1": {
+                "type": "free_form_judge",
+                "model": "judge-model-1",
+                "paraphrases": ["Judge 1: {answer}"],
+            },
+            "judge2": {
+                "type": "rating_judge",
+                "model": "judge-model-2",
+                "paraphrases": ["Judge 2: {answer}. Rate 0-100."],
+            },
+        },
+        results_dir=temp_dir,
+    )
+    model_groups = {"group1": ["model-1"]}
+    df = question.df(model_groups)
+    assert "judge1" in df.columns
+    assert "judge2" in df.columns
+    assert "judge1_question" in df.columns
+    assert "judge2_question" in df.columns
+
+
+def test_rating_question(mock_openai_chat_completion, temp_dir):
+    question = Question.create(
+        type="rating",
+        paraphrases=["Rate from 0 to 100"],
+        min_rating=0,
+        max_rating=100,
+        top_logprobs=10,
+        results_dir=temp_dir,
+    )
+    model_groups = {"group1": ["model-1"]}
+    df = question.df(model_groups)
+    assert "raw_answer" in df.columns
+    assert all(isinstance(val, dict) for val in df["raw_answer"])
+    assert all(isinstance(val, (int, float)) or val is None for val in df["answer"])
+
+
+def test_rating_question_custom_range(mock_openai_chat_completion, temp_dir):
+    question = Question.create(
+        type="rating",
+        paraphrases=["Rate 1-5"],
+        min_rating=1,
+        max_rating=5,
+        refusal_threshold=0.5,
+        results_dir=temp_dir,
+    )
+    model_groups = {"group1": ["model-1"]}
+    df = question.df(model_groups)
+    assert len(df) > 0
+    assert all(val is None or 1 <= val <= 5 for val in df["answer"] if val is not None)
+
+
+def test_nexttoken_question(mock_openai_chat_completion, temp_dir):
+    question = Question.create(
+        type="next_token",
+        paraphrases=["The answer is"],
+        top_logprobs=15,
+        convert_to_probs=True,
+        num_samples=1,
+        results_dir=temp_dir,
+    )
+    model_groups = {"group1": ["model-1"]}
+    df = question.df(model_groups)
+    assert all(isinstance(val, dict) for val in df["answer"])
+    assert len(df) > 0
+
+
+def test_nexttoken_with_multiple_samples(mock_openai_chat_completion, temp_dir):
+    question = Question.create(
+        type="next_token",
+        paraphrases=["Hello"],
+        num_samples=3,
+        convert_to_probs=False,
+        results_dir=temp_dir,
+    )
+    model_groups = {"group1": ["model-1"]}
+    df = question.df(model_groups)
+    assert all(isinstance(val, dict) for val in df["answer"])
+
+
+def test_freeform_with_system_message(mock_openai_chat_completion, temp_dir):
+    question = Question.create(
+        type="free_form",
+        paraphrases=["What is 5+5?"],
+        system="You are a helpful assistant.",
+        results_dir=temp_dir,
+    )
+    model_groups = {"group1": ["model-1"]}
+    df = question.df(model_groups)
+    assert len(df) > 0
+    assert all(len(msgs) == 2 for msgs in df["messages"])
+    assert all(msgs[0]["role"] == "system" for msgs in df["messages"])
+
+
+def test_freeform_with_custom_messages(mock_openai_chat_completion, temp_dir):
+    messages = [
+        [{"role": "system", "content": "Be concise"}, {"role": "user", "content": "Hi"}],
+        [{"role": "user", "content": "Bye"}],
+    ]
+    question = Question.create(
+        type="free_form",
+        messages=messages,
+        results_dir=temp_dir,
+    )
+    model_groups = {"group1": ["model-1"]}
+    df = question.df(model_groups)
+    assert len(df) == 2
+    assert df["messages"].iloc[0] == messages[0]
+    assert df["messages"].iloc[1] == messages[1]
+
+
+def test_freeform_multiple_samples_per_paraphrase(mock_openai_chat_completion, temp_dir):
+    question = Question.create(
+        type="free_form",
+        paraphrases=["Count to 3"],
+        samples_per_paraphrase=5,
+        results_dir=temp_dir,
+    )
+    model_groups = {"group1": ["model-1"]}
+    df = question.df(model_groups)
+    assert len(df) == 5
+
+
+def test_freeform_multiple_paraphrases_multiple_samples(mock_openai_chat_completion, temp_dir):
+    question = Question.create(
+        type="free_form",
+        paraphrases=["A", "B", "C"],
+        samples_per_paraphrase=2,
+        results_dir=temp_dir,
+    )
+    model_groups = {"group1": ["model-1"]}
+    df = question.df(model_groups)
+    assert len(df) == 6
+    assert len(df[df["question"] == "A"]) == 2
+    assert len(df[df["question"] == "B"]) == 2
+    assert len(df[df["question"] == "C"]) == 2
+
+
+def test_freeform_different_temperatures(mock_openai_chat_completion, temp_dir):
+    question = Question.create(
+        type="free_form",
+        paraphrases=["Random"],
+        temperature=0.0,
+        max_tokens=50,
+        results_dir=temp_dir,
+    )
+    model_groups = {"group1": ["model-1"]}
+    df = question.df(model_groups)
+    assert len(df) > 0
+
+
+def test_rating_judge_with_custom_range(mock_openai_chat_completion, temp_dir):
+    question = Question.create(
+        type="free_form",
+        id="test_rating_judge_range",
+        paraphrases=["Test"],
+        judges={
+            "rating": {
+                "type": "rating_judge",
+                "model": "judge-model",
+                "paraphrases": ["Rate {answer}. 0-10 only."],
+                "min_rating": 0,
+                "max_rating": 10,
+            }
+        },
+        results_dir=temp_dir,
+    )
+    model_groups = {"group1": ["model-1"]}
+    df = question.df(model_groups)
+    assert "rating" in df.columns
+    assert all(val is None or 0 <= val <= 10 for val in df["rating"] if val is not None)
+
+
+def test_multiple_model_groups(mock_openai_chat_completion, temp_dir):
+    question = Question.create(
+        type="free_form",
+        paraphrases=["Test"],
+        results_dir=temp_dir,
+    )
+    model_groups = {
+        "group1": ["model-1", "model-2"],
+        "group2": ["model-3"],
+    }
+    df = question.df(model_groups)
+    assert len(df) == 3
+    assert len(df[df["group"] == "group1"]) == 2
+    assert len(df[df["group"] == "group2"]) == 1
+    assert set(df["model"].unique()) == {"model-1", "model-2", "model-3"}
+
+
+def test_judge_uses_question_and_answer_placeholders(mock_openai_chat_completion, temp_dir):
+    question = Question.create(
+        type="free_form",
+        id="test_judge_placeholders",
+        paraphrases=["What is 2+2?"],
+        judges={
+            "eval": {
+                "type": "free_form_judge",
+                "model": "judge-model",
+                "paraphrases": ["Q: {question}\nA: {answer}\nIs this good?"],
+            }
+        },
+        results_dir=temp_dir,
+    )
+    model_groups = {"group1": ["model-1"]}
+    df = question.df(model_groups)
+    assert "eval_question" in df.columns
+    assert all("What is 2+2?" in q for q in df["eval_question"])
+    assert all("Mocked response" in q for q in df["eval_question"])
+
+
+def test_freeform_judge_temperature_zero(mock_openai_chat_completion, temp_dir):
+    question = Question.create(
+        type="free_form",
+        id="test_judge_temp_zero",
+        paraphrases=["Test"],
+        judges={
+            "judge": {
+                "type": "free_form_judge",
+                "model": "judge-model",
+                "paraphrases": ["Judge: {answer}"],
+                "temperature": 0.0,
+            }
+        },
+        results_dir=temp_dir,
+    )
+    model_groups = {"group1": ["model-1"]}
+    df = question.df(model_groups)
+    assert len(df) > 0
 
