@@ -332,3 +332,38 @@ def test_freeform_judge_temperature_zero(mock_openai_chat_completion, temp_dir):
     df = question.df(model_groups)
     assert len(df) > 0
 
+
+def test_judge_paraphrases_not_mutated(mock_openai_chat_completion, temp_dir):
+    original_paraphrase = "Judge: {answer}"
+    question = Question.create(
+        type="free_form",
+        id="test_judge_mutation",
+        paraphrases=["Q1", "Q2"],
+        judges={
+            "judge": {
+                "type": "free_form_judge",
+                "model": "judge-model",
+                "paraphrases": [original_paraphrase],
+            }
+        },
+        results_dir=temp_dir,
+    )
+    model_groups = {"group1": ["model-1"]}
+    
+    original_judge_paraphrases = question.judges["judge"].paraphrases.copy()
+    assert original_judge_paraphrases == [original_paraphrase]
+    
+    df1 = question.df(model_groups)
+    assert len(df1) == 2
+    
+    after_first_call = question.judges["judge"].paraphrases.copy()
+    
+    df2 = question.df(model_groups)
+    assert len(df2) == 2
+    
+    after_second_call = question.judges["judge"].paraphrases.copy()
+    
+    assert original_judge_paraphrases == [original_paraphrase], f"Original paraphrases were mutated: {original_judge_paraphrases}"
+    assert after_first_call == after_second_call, f"Paraphrases changed between calls: {after_first_call} != {after_second_call}"
+    assert question.judges["judge"].paraphrases[0] == original_paraphrase, f"Final paraphrase is wrong: {question.judges['judge'].paraphrases[0]}"
+
