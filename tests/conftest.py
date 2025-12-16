@@ -43,8 +43,19 @@ def mock_openai_chat_completion():
     # Clear the client cache to ensure fresh mocks
     CACHE.clear()
     
-    # Create a mock client object
+    # Create a function that returns a properly structured mock completion
+    def create_mock_completion(*, client=None, **kwargs):
+        # Extract messages to determine what response to return
+        messages = kwargs.get('messages', [])
+        if messages:
+            # Simple mock: return the last message content as the answer
+            last_message = messages[-1].get('content', 'Mock response')
+            return MockCompletion(f"Mocked response to: {last_message}")
+        return MockCompletion("Mock response")
+    
+    # Create a mock client object with chat.completions.create properly configured
     mock_client = Mock()
+    mock_client.chat.completions.create = Mock(side_effect=create_mock_completion)
     
     # Define a simple get_client replacement that returns the mock client
     def mock_get_client(model: str):
@@ -55,24 +66,17 @@ def mock_openai_chat_completion():
     
     # Import the runner module to access the get_client reference
     import llmcompare.runner.runner as runner_module
+    import llmcompare.runner.client as client_module
     
     # Patch get_client both where it's defined and where it's imported/used
     # We need to patch it in runner.runner because it's imported there with "from ... import"
+    # Also patch openai_chat_completion where it's imported
     with patch('llmcompare.runner.client.get_client', side_effect=mock_get_client), \
          patch.object(runner_module, 'get_client', side_effect=mock_get_client), \
-         patch('llmcompare.runner.chat_completion.openai_chat_completion') as mock_chat_completion:
+         patch('llmcompare.runner.chat_completion.openai_chat_completion', side_effect=create_mock_completion) as mock_chat_completion, \
+         patch.object(runner_module, 'openai_chat_completion', side_effect=create_mock_completion), \
+         patch.object(client_module, 'openai_chat_completion', side_effect=create_mock_completion):
         
-        # Default behavior: return a mock completion with a simple response
-        def mock_impl(*, client, **kwargs):
-            # Extract messages to determine what response to return
-            messages = kwargs.get('messages', [])
-            if messages:
-                # Simple mock: return the last message content as the answer
-                last_message = messages[-1].get('content', 'Mock response')
-                return MockCompletion(f"Mocked response to: {last_message}")
-            return MockCompletion("Mock response")
-        
-        mock_chat_completion.side_effect = mock_impl
         yield mock_chat_completion
     
     # Clean up cache after test
