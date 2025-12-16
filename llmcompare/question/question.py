@@ -116,7 +116,7 @@ class Question(ABC):
                 continue
 
             path = os.path.join(question_dir, fname)
-            with open(path, "r") as f:
+            with open(path, "r", encoding="utf-8") as f:
                 data = yaml.load(f, Loader=yaml.SafeLoader)
                 if data is None:
                     # Empty file
@@ -554,8 +554,6 @@ class Rating(Question):
         return df
 
     def _aggregate_0_100_score(self, score: dict | None) -> float:
-
-
         if score is None:
             mid_value = (self.min_rating + self.max_rating) / 2
             print(f"You got None from a judge. This should be impossible, but sometimes happens. Returning middle value {mid_value} instead.")
@@ -587,7 +585,7 @@ class FreeFormJudge(FreeForm):
         assert self.samples_per_paraphrase == 1, (
             "Judge question must have exactly one sample per paraphrase"
         )
-        assert not self.judges, "Judge question cannot have judges"
+        assert self.judges is None or len(self.judges) == 0, "Judge question cannot have judges"
         self.model = model
 
 
