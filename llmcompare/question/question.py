@@ -328,6 +328,17 @@ class Question(ABC):
 
 class FreeForm(Question):
     _runner_sampling_func_name = "get_text"
+    
+    # Forbidden judge names: standard dataframe columns and any name starting with "_"
+    _FORBIDDEN_JUDGE_NAMES = {
+        "model",
+        "group",
+        "answer",
+        "question",
+        "messages",
+        "paraphrase_ix",
+        "raw_answer",
+    }
 
     def __init__(
         self,
@@ -342,6 +353,17 @@ class FreeForm(Question):
         self.max_tokens = max_tokens
 
         if judges is not None:
+            # Validate judge names
+            for key in judges.keys():
+                if key in self._FORBIDDEN_JUDGE_NAMES:
+                    raise ValueError(
+                        f"Judge name '{key}' is forbidden. It conflicts with standard dataframe columns."
+                    )
+                if key.startswith("_"):
+                    raise ValueError(
+                        f"Judge name '{key}' is forbidden. Names starting with '_' are reserved for internal use."
+                    )
+            
             self.judges = {}
             for key, val in judges.items():
                 if isinstance(val, str):

@@ -1,3 +1,4 @@
+import pytest
 from llmcompare.question.question import Question
 
 
@@ -469,4 +470,69 @@ def test_paraphrase_ix_with_messages(mock_openai_chat_completion, temp_dir):
     assert df[df["question"] == "Message set 1"]["paraphrase_ix"].iloc[0] == 0
     assert df[df["question"] == "Message set 2"]["paraphrase_ix"].iloc[0] == 1
     assert df[df["question"] == "Message set 3"]["paraphrase_ix"].iloc[0] == 2
+
+
+def test_forbidden_judge_names(mock_openai_chat_completion, temp_dir):
+    """Test that forbidden judge names raise ValueError"""
+    forbidden_names = ["model", "group", "answer", "question", "messages", "paraphrase_ix", "raw_answer"]
+    
+    for forbidden_name in forbidden_names:
+        with pytest.raises(ValueError, match=f"Judge name '{forbidden_name}' is forbidden"):
+            Question.create(
+                type="free_form",
+                paraphrases=["Test"],
+                judges={
+                    forbidden_name: {
+                        "type": "free_form_judge",
+                        "model": "judge-model",
+                        "paraphrases": ["Judge: {answer}"],
+                    }
+                },
+                results_dir=temp_dir,
+            )
+
+
+def test_forbidden_judge_names_underscore(mock_openai_chat_completion, temp_dir):
+    """Test that judge names starting with '_' are forbidden"""
+    underscore_names = ["_judge", "__internal", "_test"]
+    
+    for name in underscore_names:
+        with pytest.raises(ValueError, match="Names starting with '_' are reserved for internal use"):
+            Question.create(
+                type="free_form",
+                paraphrases=["Test"],
+                judges={
+                    name: {
+                        "type": "free_form_judge",
+                        "model": "judge-model",
+                        "paraphrases": ["Judge: {answer}"],
+                    }
+                },
+                results_dir=temp_dir,
+            )
+
+
+def test_valid_judge_names(mock_openai_chat_completion, temp_dir):
+    """Test that valid judge names work correctly"""
+    question = Question.create(
+        type="free_form",
+        paraphrases=["Test"],
+        judges={
+            "quality": {
+                "type": "free_form_judge",
+                "model": "judge-model",
+                "paraphrases": ["Judge: {answer}"],
+            },
+            "score": {
+                "type": "rating_judge",
+                "model": "judge-model",
+                "paraphrases": ["Rate: {answer}"],
+            },
+        },
+        results_dir=temp_dir,
+    )
+    # Should not raise any error
+    assert question.judges is not None
+    assert "quality" in question.judges
+    assert "score" in question.judges
 
