@@ -304,7 +304,7 @@ class Question(ABC):
 
         We use that to determine whether we can use cached results.
         """
-        attributes = {k: v for k, v in self.__dict__.items()}
+        attributes = {k: v for k, v in self.__dict__.items() if k != "judges"}
         attributes["_version"] = self._version
         json_str = json.dumps(attributes, sort_keys=True)
         return hashlib.sha256(json_str.encode()).hexdigest()
@@ -380,10 +380,16 @@ class FreeForm(Question):
 
         # Set the paraphrases to unique values (we don't need to judge the same thing multiple times)
         # Note: we sort them to make the hash deterministic for the purpose of caching
-        judge_question.paraphrases = sorted(set(new_paraphrases))
+        # Work with a copy to avoid mutating the original judge_question stored in self.judges
+        original_paraphrases = judge_question.paraphrases
+        try:
+            judge_question.paraphrases = sorted(set(new_paraphrases))
 
-        # Get the judge results
-        judge_df = judge_question.df({"judge": [judge_question.model]})
+            # Get the judge results
+            judge_df = judge_question.df({"judge": [judge_question.model]})
+        finally:
+            # Restore original paraphrases to make the method idempotent
+            judge_question.paraphrases = original_paraphrases
         judge_columns = [judge_name, judge_name + "_question"]
         judge_df = judge_df.rename(
             columns={"answer": judge_name, "question": judge_name + "_question"}

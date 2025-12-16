@@ -173,8 +173,10 @@ class Runner:
         if max_workers is None:
             max_workers = self.config.max_workers
 
+        executor_created = False
         if executor is None:
             executor = ThreadPoolExecutor(max_workers)
+            executor_created = True
 
         def get_data(kwargs):
             func_kwargs = {
@@ -199,7 +201,8 @@ class Runner:
                 fut.cancel()
             raise
         finally:
-            executor.shutdown(wait=False)
+            if executor_created:
+                executor.shutdown(wait=False)
 
     def sample_probs(
         self,
