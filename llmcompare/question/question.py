@@ -133,6 +133,7 @@ class Question(ABC):
                             "answer": el["answer"],
                             "question": el["question"],
                             "messages": el["messages"],
+                            "paraphrase_ix": el["paraphrase_ix"],
                         }
                     )
         df = pd.DataFrame(data)
@@ -242,6 +243,7 @@ class Question(ABC):
                                     "messages": deepcopy(in_["messages"]),
                                     "question": in_["_question"],
                                     "answer": out,
+                                    "paraphrase_ix": in_["_paraphrase_ix"],
                                 }
 
                                 current_num += 1
@@ -265,11 +267,12 @@ class Question(ABC):
     def get_runner_input(self) -> list[dict]:
         messages_set = self.as_messages()
         runner_input = []
-        for messages in messages_set:
+        for paraphrase_ix, messages in enumerate(messages_set):
             this_input = {
                 "messages": messages,
                 "logit_bias": self.logit_bias,
                 "_question": messages[-1]["content"],
+                "_paraphrase_ix": paraphrase_ix,
             }
             # Deepcopy because someone might later edit the structures in-place
             # (e.g. we now do that in many_models_execute)

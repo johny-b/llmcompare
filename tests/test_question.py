@@ -411,3 +411,62 @@ def test_questions_with_different_judges_have_different_hashes(mock_openai_chat_
     assert hash2 != hash3, "Questions with different judges should have different hashes"
     assert hash1 != hash3, "Question without judge should have different hash than question with different judge"
 
+
+def test_paraphrase_ix_column(mock_openai_chat_completion, temp_dir):
+    """Test that dataframe includes paraphrase_ix column with correct values"""
+    question = Question.create(
+        type="free_form",
+        paraphrases=["First question", "Second question", "Third question"],
+        samples_per_paraphrase=2,
+        results_dir=temp_dir,
+    )
+    model_groups = {"group1": ["model-1"]}
+    df = question.df(model_groups)
+    
+    # Check that paraphrase_ix column exists
+    assert "paraphrase_ix" in df.columns, "paraphrase_ix column should be present"
+    
+    # Check that we have the expected number of rows (3 paraphrases * 2 samples = 6)
+    assert len(df) == 6, f"Expected 6 rows, got {len(df)}"
+    
+    # Check that paraphrase_ix values are correct
+    assert set(df["paraphrase_ix"].unique()) == {0, 1, 2}, "paraphrase_ix should be 0, 1, or 2"
+    
+    # Check that each paraphrase has the correct index
+    first_paraphrase_rows = df[df["question"] == "First question"]
+    assert all(first_paraphrase_rows["paraphrase_ix"] == 0), "First paraphrase should have index 0"
+    assert len(first_paraphrase_rows) == 2, "First paraphrase should have 2 samples"
+    
+    second_paraphrase_rows = df[df["question"] == "Second question"]
+    assert all(second_paraphrase_rows["paraphrase_ix"] == 1), "Second paraphrase should have index 1"
+    assert len(second_paraphrase_rows) == 2, "Second paraphrase should have 2 samples"
+    
+    third_paraphrase_rows = df[df["question"] == "Third question"]
+    assert all(third_paraphrase_rows["paraphrase_ix"] == 2), "Third paraphrase should have index 2"
+    assert len(third_paraphrase_rows) == 2, "Third paraphrase should have 2 samples"
+
+
+def test_paraphrase_ix_with_messages(mock_openai_chat_completion, temp_dir):
+    """Test that paraphrase_ix works with custom messages"""
+    messages = [
+        [{"role": "user", "content": "Message set 1"}],
+        [{"role": "user", "content": "Message set 2"}],
+        [{"role": "system", "content": "System"}, {"role": "user", "content": "Message set 3"}],
+    ]
+    question = Question.create(
+        type="free_form",
+        messages=messages,
+        results_dir=temp_dir,
+    )
+    model_groups = {"group1": ["model-1"]}
+    df = question.df(model_groups)
+    
+    assert "paraphrase_ix" in df.columns, "paraphrase_ix column should be present"
+    assert len(df) == 3, "Should have 3 rows (one per message set)"
+    assert set(df["paraphrase_ix"].unique()) == {0, 1, 2}, "paraphrase_ix should be 0, 1, or 2"
+    
+    # Check that each message set has the correct index
+    assert df[df["question"] == "Message set 1"]["paraphrase_ix"].iloc[0] == 0
+    assert df[df["question"] == "Message set 2"]["paraphrase_ix"].iloc[0] == 1
+    assert df[df["question"] == "Message set 3"]["paraphrase_ix"].iloc[0] == 2
+
