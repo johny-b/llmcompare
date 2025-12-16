@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import hashlib
 import json
 import os
@@ -11,6 +13,7 @@ import pandas as pd
 import yaml
 from tqdm import tqdm
 
+from llmcompare.question.plots import free_form_stacked_bar
 from llmcompare.question.result import Result
 from llmcompare.runner.runner import Runner
 
@@ -68,11 +71,21 @@ class Question(ABC):
 
     @classmethod
     def create(cls, **kwargs) -> "Question":
-        for question_class in (FreeForm, Rating, FreeFormJudge, RatingJudge, NextToken):
-            if question_class.type() == kwargs["type"]:
+        valid_types = (FreeForm, Rating, FreeFormJudge, RatingJudge, NextToken)
+        question_type = kwargs.get("type")
+        if question_type is None:
+            raise ValueError("Missing required 'type' parameter")
+        
+        for question_class in valid_types:
+            if question_class.type() == question_type:
                 del kwargs["type"]
                 return question_class(**kwargs)
-        raise ValueError(f"Invalid question type: {kwargs['type']}")
+        
+        valid_type_names = [q.type() for q in valid_types]
+        raise ValueError(
+            f"Invalid question type: '{question_type}'. "
+            f"Available types are: {', '.join(valid_type_names)}"
+        )
 
     @classmethod
     def load_dict(cls, id_: str, question_dir: str | None = None) -> dict:
@@ -103,7 +116,7 @@ class Question(ABC):
                 continue
 
             path = os.path.join(question_dir, fname)
-            with open(path, "r") as f:
+            with open(path, "r", encoding="utf-8") as f:
                 data = yaml.load(f, Loader=yaml.SafeLoader)
                 if data is None:
                     # Empty file
@@ -133,6 +146,7 @@ class Question(ABC):
                             "answer": el["answer"],
                             "question": el["question"],
                             "messages": el["messages"],
+                            "paraphrase_ix": el["paraphrase_ix"],
                         }
                     )
         df = pd.DataFrame(data)
@@ -242,6 +256,7 @@ class Question(ABC):
                                     "messages": deepcopy(in_["messages"]),
                                     "question": in_["_question"],
                                     "answer": out,
+                                    "paraphrase_ix": in_["_paraphrase_ix"],
                                 }
 
                                 current_num += 1
@@ -265,11 +280,12 @@ class Question(ABC):
     def get_runner_input(self) -> list[dict]:
         messages_set = self.as_messages()
         runner_input = []
-        for messages in messages_set:
+        for paraphrase_ix, messages in enumerate(messages_set):
             this_input = {
                 "messages": messages,
                 "logit_bias": self.logit_bias,
                 "_question": messages[-1]["content"],
+                "_paraphrase_ix": paraphrase_ix,
             }
             # Deepcopy because someone might later edit the structures in-place
             # (e.g. we now do that in many_models_execute)
@@ -304,37 +320,51 @@ class Question(ABC):
 
         We use that to determine whether we can use cached results.
         """
-        attributes = {k: v for k, v in self.__dict__.items()}
+        attributes = {k: v for k, v in self.__dict__.items() if k != "judges"}
         attributes["_version"] = self._version
+        
+        # Include judges in the hash by using their hash values
+        # This ensures questions with different judges (or no judges) have different hashes
+        if hasattr(self, "judges"):
+            if self.judges is not None:
+                judges_hash = {
+                    name: judge.hash() for name, judge in sorted(self.judges.items())
+                }
+                attributes["judges"] = judges_hash
+            else:
+                # Explicitly include None to distinguish from questions without the judges attribute
+                attributes["judges"] = None
+        
         json_str = json.dumps(attributes, sort_keys=True)
         return hashlib.sha256(json_str.encode()).hexdigest()
 
 
 class FreeForm(Question):
     _runner_sampling_func_name = "get_text"
+    
+    # Forbidden judge names: standard dataframe columns and any name starting with "_"
+    _FORBIDDEN_JUDGE_NAMES = {
+        "model",
+        "group",
+        "answer",
+        "question",
+        "messages",
+        "paraphrase_ix",
+        "raw_answer",
+    }
 
     def __init__(
         self,
         *,
         temperature: float = 1,
         max_tokens: int = 1024,
-        judges: dict[str, str] = None,
+        judges: dict[str, str | dict | "FreeFormJudge" | "RatingJudge"] = None,
         **kwargs,
     ):
         super().__init__(**kwargs)
         self.temperature = temperature
         self.max_tokens = max_tokens
-
-        if judges is not None:
-            self.judges = {}
-            for key, val in judges.items():
-                if isinstance(val, str):
-                    judge_dict = Question.load_dict(val, question_dir=self.question_dir)
-                else:
-                    judge_dict = val
-                self.judges[key] = judge_dict
-        else:
-            self.judges = None
+        self.judges = self._parse_judges(judges)
 
     def get_runner_input(self) -> list[dict]:
         runner_input = super().get_runner_input()
@@ -347,8 +377,8 @@ class FreeForm(Question):
         df = super().df(model_groups)
         columns = df.columns.tolist()
         if self.judges:
-            for i, (judge_name, judge_dict) in enumerate(self.judges.items()):
-                df = self.add_judge(model_groups, df, judge_name, judge_dict)
+            for i, (judge_name, judge_question) in enumerate(self.judges.items()):
+                df = self.add_judge(model_groups, df, judge_name, judge_question)
                 columns.insert(3 + i, judge_name)
                 columns.append(judge_name + "_question")
                 if f"{judge_name}_raw_answer" in df.columns:
@@ -361,13 +391,8 @@ class FreeForm(Question):
         model_groups: dict[str, list[str]],
         my_df: pd.DataFrame,
         judge_name: str,
-        judge_dict: dict,
+        judge_question: Question,
     ) -> pd.DataFrame:
-        judge_question = Question.create(**judge_dict)
-        assert judge_question.type() in (
-            "free_form_judge",
-            "rating_judge",
-        ), "Judge must be a free_form_judge or rating_judge"
         judge_paraphrase = judge_question.paraphrases[0]
 
         # Create "real" paraphrases that include questions and answers
@@ -380,10 +405,16 @@ class FreeForm(Question):
 
         # Set the paraphrases to unique values (we don't need to judge the same thing multiple times)
         # Note: we sort them to make the hash deterministic for the purpose of caching
-        judge_question.paraphrases = sorted(set(new_paraphrases))
+        # Work with a copy to avoid mutating the original judge_question stored in self.judges
+        original_paraphrases = judge_question.paraphrases
+        try:
+            judge_question.paraphrases = sorted(set(new_paraphrases))
 
-        # Get the judge results
-        judge_df = judge_question.df({"judge": [judge_question.model]})
+            # Get the judge results
+            judge_df = judge_question.df({"judge": [judge_question.model]})
+        finally:
+            # Restore original paraphrases to make the method idempotent
+            judge_question.paraphrases = original_paraphrases
         judge_columns = [judge_name, judge_name + "_question"]
         judge_df = judge_df.rename(
             columns={"answer": judge_name, "question": judge_name + "_question"}
@@ -410,137 +441,85 @@ class FreeForm(Question):
         model_groups: dict[str, list[str]],
         category_column: str = "group",
         answer_column: str = "answer",
-
         df: pd.DataFrame = None,
         selected_answers: list[str] = None,
         min_fraction: float = None,
-        
         colors: dict[str, str] = None,
         title: str = None,
         filename: str = None,
     ):
-
+        """Plot stacked bar chart of answers by category."""
         if df is None:
             df = self.df(model_groups)
-
-        if min_fraction is not None and selected_answers is not None:
-            raise ValueError("min_percentage and selected_answers cannot both be set")
-
-        if min_fraction is not None:
-            # For each category, find answers that meet the minimum fraction threshold
-            selected_answers_set = set()
-            
-            # Group by category and calculate answer frequencies for each category
-            for category in df[category_column].unique():
-                category_df = df[df[category_column] == category]
-                answer_counts = category_df[answer_column].value_counts()
-                total_count = len(category_df)
-                
-                # Find answers that meet the minimum fraction threshold for this category
-                for answer, count in answer_counts.items():
-                    fraction = count / total_count
-                    if fraction >= min_fraction:
-                        selected_answers_set.add(answer)
-            
-            selected_answers = list(selected_answers_set)
-
-        if selected_answers is not None:
-            df = df.copy()
-            df[answer_column] = df[answer_column].apply(lambda x: x if x in selected_answers else "[OTHER ANSWER]")
-
-        if colors is None:
-            colors = {}
-        if "[OTHER ANSWER]" in df[answer_column].values:
-            if "[OTHER ANSWER]" not in colors:
-                colors["[OTHER ANSWER]"] = "grey"
-
-        import matplotlib.pyplot as plt
-
-        # Count occurrences of each answer for each category
-        answer_counts = df.groupby([category_column, answer_column]).size().unstack(fill_value=0)
-
-        # Convert to percentages
-        answer_percentages = answer_counts.div(answer_counts.sum(axis=1), axis=0) * 100
-
-        # ---- Legend & plotting order logic ----
-
-        # Color palette for fallback
-        color_palette = [
-            "red", "blue", "green", "orange", "purple", "brown", "pink", "olive", 
-            "cyan", "magenta", "yellow", "navy", "lime", "maroon", "teal", "silver",
-            "gold", "indigo", "coral", "crimson"
-        ]
-
-        # Prepare legend/answer order
-        column_answers = list(answer_percentages.columns)
-        if selected_answers is not None:
-            # Legend order: exactly selected_answers, then any remaining in alpha order
-            ordered_answers = [a for a in selected_answers if a in column_answers]
-            extras = sorted([a for a in column_answers if a not in selected_answers])
-            ordered_answers += extras
-        elif colors:
-            color_keys = list(colors.keys())
-            ordered_answers = [a for a in color_keys if a in column_answers]
-            extras = sorted([a for a in column_answers if a not in ordered_answers])
-            ordered_answers += extras
-        else:
-            ordered_answers = sorted(column_answers)
-        # Reindex columns to the desired order
-        answer_percentages = answer_percentages.reindex(columns=ordered_answers)
-
-        # Build plot_colors according to legend order
-        plot_colors = []
-        color_index = 0
-        for answer in ordered_answers:
-            if answer in colors:
-                plot_colors.append(colors[answer])
-            elif answer == "[OTHER ANSWER]":
-                plot_colors.append("grey")
-            else:
-                plot_colors.append(color_palette[color_index % len(color_palette)])
-                color_index += 1
-
-        # Determine ordering of groups if category_column is "group"
-        if category_column == "group":
-            # Ensure plotting order matches the order of model_groups.keys()
-            ordered_groups = [g for g in model_groups.keys() if g in answer_percentages.index]
-            # Add any missing groups at the end (unlikely unless inconsistent data)
-            ordered_groups += [g for g in answer_percentages.index if g not in ordered_groups]
-            answer_percentages = answer_percentages.reindex(ordered_groups)
-
-        fig, ax = plt.subplots(figsize=(12, 8))
-        answer_percentages.plot(kind='bar', stacked=True, ax=ax, color=plot_colors)
-
-        plt.xlabel(category_column)
-        plt.ylabel('Percentage')
-        plt.legend(title=answer_column)
-
-        # Sort x-axis ticks by group if category_column is "model"
-        if category_column == "model":
-            tick_labels = [tick.get_text() for tick in ax.get_xticklabels()]
-            model_to_group = df.groupby('model')['group'].first().to_dict()
-            sorted_labels = sorted(tick_labels, key=lambda model: model_to_group.get(model, ''))
-            answer_percentages_sorted = answer_percentages.reindex(sorted_labels)
-            ax.clear()
-            answer_percentages_sorted.plot(kind='bar', stacked=True, ax=ax, color=plot_colors)
-            plt.xlabel(category_column)
-            plt.ylabel('Percentage')
-            plt.legend(title=answer_column)
-
-        plt.xticks(rotation=45, ha='right')
+        
+        # Generate title from paraphrases if not provided
         if title is None:
-            if len(self.paraphrases) == 1:
-                title = self.paraphrases[0]
+            if self.paraphrases is not None:
+                if len(self.paraphrases) == 1:
+                    title = self.paraphrases[0]
+                else:
+                    title = self.paraphrases[0] + f"\nand {len(self.paraphrases) - 1} other paraphrases"
+        
+        return free_form_stacked_bar(
+            df,
+            category_column=category_column,
+            answer_column=answer_column,
+            model_groups=model_groups,
+            selected_answers=selected_answers,
+            min_fraction=min_fraction,
+            colors=colors,
+            title=title,
+            filename=filename,
+        )
+
+    def _parse_judges(
+        self, judges: dict[str, str | dict | "FreeFormJudge" | "RatingJudge"] | None
+    ) -> dict[str, "Question"] | None:
+        """Parse and validate judges dictionary."""
+        if judges is None:
+            return None
+        
+        # Validate judge names
+        for key in judges.keys():
+            if key in self._FORBIDDEN_JUDGE_NAMES:
+                raise ValueError(
+                    f"Judge name '{key}' is forbidden. It conflicts with standard dataframe columns."
+                )
+            if key.startswith("_"):
+                raise ValueError(
+                    f"Judge name '{key}' is forbidden. Names starting with '_' are reserved for internal use."
+                )
+            if key.endswith("_question"):
+                raise ValueError(
+                    f"Judge name '{key}' is forbidden. Names ending with '_question' conflict with "
+                    f"automatically generated columns."
+                )
+            if key.endswith("_raw_answer"):
+                raise ValueError(
+                    f"Judge name '{key}' is forbidden. Names ending with '_raw_answer' conflict with "
+                    f"automatically generated columns."
+                )
+        
+        parsed_judges = {}
+        for key, val in judges.items():
+            if isinstance(val, (FreeFormJudge, RatingJudge)):
+                # Already a Question instance, use it directly
+                judge_question = val
+            elif isinstance(val, str):
+                # Load from question_dir
+                judge_dict = Question.load_dict(val, question_dir=self.question_dir)
+                judge_question = Question.create(**judge_dict)
             else:
-                title = self.paraphrases[0] + f"\nand {len(self.paraphrases) - 1} other paraphrases"
-        plt.title(title)
-
-        plt.tight_layout()
-        if filename is not None:
-            plt.savefig(filename, bbox_inches="tight")
-        plt.show()
-
-
+                # Assume it's a dict
+                judge_question = Question.create(**val)
+            
+            assert judge_question.type() in (
+                "free_form_judge",
+                "rating_judge",
+            ), "Judge must be a free_form_judge or rating_judge"
+            parsed_judges[key] = judge_question
+        
+        return parsed_judges
 
         
 
@@ -575,8 +554,6 @@ class Rating(Question):
         return df
 
     def _aggregate_0_100_score(self, score: dict | None) -> float:
-
-
         if score is None:
             mid_value = (self.min_rating + self.max_rating) / 2
             print(f"You got None from a judge. This should be impossible, but sometimes happens. Returning middle value {mid_value} instead.")
@@ -608,7 +585,7 @@ class FreeFormJudge(FreeForm):
         assert self.samples_per_paraphrase == 1, (
             "Judge question must have exactly one sample per paraphrase"
         )
-        assert not self.judges, "Judge question cannot have judges"
+        assert self.judges is None or len(self.judges) == 0, "Judge question cannot have judges"
         self.model = model
 
 

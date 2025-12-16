@@ -23,6 +23,7 @@ dependencies = [
 [dependency-groups]
 dev = [
     "ruff",
+    "pytest",
 ]
 
 [project.urls]

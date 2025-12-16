@@ -74,7 +74,11 @@ def get_all_openai_url_key_pairs() -> list[tuple[str, str]]:
     """Create all possible OpenAI url-key pairs based on available env variables."""
     # 1. Multiple possible OpenAI keys.
     openai_key_names = ["OPENAI_API_KEY"]
-    openai_key_names += [f"OPENAI_API_KEY_{i}" for i in range(10)]
+    # Find all environment variables starting with OPENAI_API_KEY_
+    for env_var in os.environ:
+        if env_var.startswith("OPENAI_API_KEY_"):
+            openai_key_names.append(env_var)
+    
     openai_keys = [os.getenv(key) for key in openai_key_names]
     openai_keys = [key for key in openai_keys if key is not None]
     openai_url_pairs = [("https://api.openai.com/v1", key) for key in openai_keys]
