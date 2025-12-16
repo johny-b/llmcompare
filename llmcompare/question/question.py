@@ -71,11 +71,21 @@ class Question(ABC):
 
     @classmethod
     def create(cls, **kwargs) -> "Question":
-        for question_class in (FreeForm, Rating, FreeFormJudge, RatingJudge, NextToken):
-            if question_class.type() == kwargs["type"]:
+        valid_types = (FreeForm, Rating, FreeFormJudge, RatingJudge, NextToken)
+        question_type = kwargs.get("type")
+        if question_type is None:
+            raise ValueError("Missing required 'type' parameter")
+        
+        for question_class in valid_types:
+            if question_class.type() == question_type:
                 del kwargs["type"]
                 return question_class(**kwargs)
-        raise ValueError(f"Invalid question type: {kwargs['type']}")
+        
+        valid_type_names = [q.type() for q in valid_types]
+        raise ValueError(
+            f"Invalid question type: '{question_type}'. "
+            f"Available types are: {', '.join(valid_type_names)}"
+        )
 
     @classmethod
     def load_dict(cls, id_: str, question_dir: str | None = None) -> dict:
