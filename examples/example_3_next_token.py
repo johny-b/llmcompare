@@ -4,7 +4,7 @@ from llmcompare import Question
 
 question = Question.create(
     type="next_token",
-    paraphrases=["What is 347 modulo 57? Answer with the number only."],
+    paraphrases=["What is 327 modulo 57? Answer with the number only."],
     top_logprobs=20,
     convert_to_probs=True,
 )
@@ -17,6 +17,7 @@ MODELS = {
 }
 
 df = question.df(MODELS)
+question.plot(MODELS, min_fraction=0.03)
 
 for _, row in df.iterrows():
     print(row["model"], row["question"], row["answer"])

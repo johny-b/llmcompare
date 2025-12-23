@@ -14,7 +14,12 @@ import pandas as pd
 import yaml
 from tqdm import tqdm
 
-from llmcompare.question.plots import default_title, free_form_stacked_bar, rating_cumulative_plot
+from llmcompare.question.plots import (
+    default_title,
+    free_form_stacked_bar,
+    probs_stacked_bar,
+    rating_cumulative_plot,
+)
 from llmcompare.question.result import Result
 from llmcompare.runner.runner import Runner
 
@@ -843,3 +848,36 @@ class NextToken(Question):
             el["convert_to_probs"] = self.convert_to_probs
             el["num_samples"] = self.num_samples
         return runner_input
+
+    def plot(
+        self,
+        model_groups: dict[str, list[str]],
+        category_column: str = "group",
+        df: pd.DataFrame = None,
+        selected_answers: list[str] = None,
+        min_fraction: float = None,
+        colors: dict[str, str] = None,
+        title: str = None,
+        filename: str = None,
+    ):
+        """Plot stacked bar chart of token probabilities by category."""
+        if df is None:
+            df = self.df(model_groups)
+        
+        if title is None:
+            title = default_title(self.paraphrases)
+        
+        # answer column already contains {token: prob} dicts
+        df = df.rename(columns={"answer": "probs"})
+        
+        return probs_stacked_bar(
+            df,
+            probs_column="probs",
+            category_column=category_column,
+            model_groups=model_groups,
+            selected_answers=selected_answers,
+            min_fraction=min_fraction,
+            colors=colors,
+            title=title,
+            filename=filename,
+        )
