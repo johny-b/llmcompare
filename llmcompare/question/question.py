@@ -14,7 +14,7 @@ import pandas as pd
 import yaml
 from tqdm import tqdm
 
-from llmcompare.question.plots import free_form_stacked_bar
+from llmcompare.question.plots import default_title, free_form_stacked_bar, rating_cumulative_plot
 from llmcompare.question.result import Result
 from llmcompare.runner.runner import Runner
 
@@ -586,13 +586,8 @@ class FreeForm(Question):
         if df is None:
             df = self.df(model_groups)
         
-        # Generate title from paraphrases if not provided
         if title is None:
-            if self.paraphrases is not None:
-                if len(self.paraphrases) == 1:
-                    title = self.paraphrases[0]
-                else:
-                    title = self.paraphrases[0] + f"\nand {len(self.paraphrases) - 1} other paraphrases"
+            title = default_title(self.paraphrases)
         
         return free_form_stacked_bar(
             df,
@@ -687,27 +682,71 @@ class Rating(Question):
         df["answer"] = df["raw_answer"].apply(self._aggregate_0_100_score)
         return df
 
-    def _aggregate_0_100_score(self, score: dict | None) -> float:
-        if score is None:
-            mid_value = (self.min_rating + self.max_rating) / 2
-            print(f"You got None from a judge. This should be impossible, but sometimes happens. Returning middle value {mid_value} instead.")
-            return mid_value
+    def _get_normalized_probs(self, score: dict | None) -> dict[int, float] | None:
+        """Extract valid rating probabilities, normalized to sum to 1.
         
+        Returns None if score is None, empty, or refusal threshold is exceeded.
+        """
+        if score is None:
+            return None
+        
+        probs = {}
         total = 0
-        sum_ = 0
         for key, val in score.items():
             try:
                 int_key = int(key)
             except ValueError:
                 continue
             if self.min_rating <= int_key <= self.max_rating:
-                sum_ += int_key * val
+                probs[int_key] = val
                 total += val
         
-        refusal_weight = 1 - total
-        if refusal_weight >= self.refusal_threshold:
+        if total == 0 or (1 - total) >= self.refusal_threshold:
             return None
-        return sum_ / total
+        
+        return {k: v / total for k, v in probs.items()}
+
+    def _aggregate_0_100_score(self, score: dict | None) -> float | None:
+        """Compute expected rating from logprobs distribution."""
+        if score is None:
+            mid_value = (self.min_rating + self.max_rating) / 2
+            print(f"You got None from a judge. This should be impossible, but sometimes happens. Returning middle value {mid_value} instead.")
+            return mid_value
+        
+        probs = self._get_normalized_probs(score)
+        if probs is None:
+            return None
+        
+        return sum(rating * prob for rating, prob in probs.items())
+
+    def plot(
+        self,
+        model_groups: dict[str, list[str]],
+        category_column: str = "group",
+        df: pd.DataFrame = None,
+        title: str = None,
+        filename: str = None,
+    ):
+        """Plot cumulative rating distribution by category."""
+        if df is None:
+            df = self.df(model_groups)
+        
+        if title is None:
+            title = default_title(self.paraphrases)
+        
+        # Pre-normalize probabilities
+        df = df.copy()
+        df["probs"] = df["raw_answer"].apply(self._get_normalized_probs)
+        
+        return rating_cumulative_plot(
+            df,
+            min_rating=self.min_rating,
+            max_rating=self.max_rating,
+            category_column=category_column,
+            model_groups=model_groups,
+            title=title,
+            filename=filename,
+        )
 
 
 class FreeFormJudge(FreeForm):

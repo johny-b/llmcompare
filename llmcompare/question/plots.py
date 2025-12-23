@@ -2,6 +2,84 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 
+def default_title(paraphrases: list[str] | None) -> str | None:
+    """Generate default plot title from paraphrases."""
+    if paraphrases is None:
+        return None
+    if len(paraphrases) == 1:
+        return paraphrases[0]
+    return paraphrases[0] + f"\nand {len(paraphrases) - 1} other paraphrases"
+
+
+def rating_cumulative_plot(
+    df: pd.DataFrame,
+    min_rating: int,
+    max_rating: int,
+    probs_column: str = "probs",
+    category_column: str = "group",
+    model_groups: dict[str, list[str]] = None,
+    title: str = None,
+    filename: str = None,
+):
+    """Plot cumulative rating distribution by category.
+    
+    Shows fraction of responses with rating <= X for each X.
+    Starts near 0 at min_rating, reaches 100% at max_rating.
+    
+    Args:
+        df: DataFrame with probs_column containing normalized probability dicts
+            mapping int ratings to probabilities (summing to 1), or None for invalid.
+        min_rating: Minimum rating value.
+        max_rating: Maximum rating value.
+        probs_column: Column containing {rating: prob} dicts. Default: "probs"
+        category_column: Column to group by. Default: "group"
+        model_groups: Optional dict for ordering groups.
+        title: Optional plot title.
+        filename: Optional filename to save plot.
+    """
+    # Get unique categories in order
+    categories = df[category_column].unique()
+    if category_column == "group" and model_groups is not None:
+        categories = [c for c in model_groups.keys() if c in categories]
+    
+    fig, ax = plt.subplots(figsize=(10, 6))
+    x_values = list(range(min_rating, max_rating + 1))
+    
+    for category in categories:
+        category_df = df[df[category_column] == category]
+        
+        # Accumulate normalized probabilities across all rows
+        cumulative = {x: 0.0 for x in x_values}
+        n_valid = 0
+        
+        for probs in category_df[probs_column]:
+            if probs is None:
+                continue
+            
+            # For each x, add P(score <= x) = sum of probs for ratings <= x
+            for x in x_values:
+                cumulative[x] += sum(p for rating, p in probs.items() if rating <= x)
+            n_valid += 1
+        
+        if n_valid > 0:
+            y_values = [cumulative[x] / n_valid for x in x_values]
+            ax.plot(x_values, y_values, label=category)
+    
+    ax.set_xlabel("Rating")
+    ax.set_ylabel("Fraction with score ≤ X")
+    ax.set_xlim(min_rating, max_rating)
+    ax.set_ylim(0, 1)
+    ax.legend()
+    
+    if title is not None:
+        ax.set_title(title)
+    
+    plt.tight_layout()
+    if filename is not None:
+        plt.savefig(filename, bbox_inches="tight")
+    plt.show()
+
+
 def free_form_stacked_bar(
     df: pd.DataFrame,
     category_column: str = "group",
