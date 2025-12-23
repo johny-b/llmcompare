@@ -18,6 +18,7 @@ def rating_cumulative_plot(
     probs_column: str = "probs",
     category_column: str = "group",
     model_groups: dict[str, list[str]] = None,
+    show_mean: bool = True,
     title: str = None,
     filename: str = None,
 ):
@@ -34,6 +35,7 @@ def rating_cumulative_plot(
         probs_column: Column containing {rating: prob} dicts. Default: "probs"
         category_column: Column to group by. Default: "group"
         model_groups: Optional dict for ordering groups.
+        show_mean: Whether to show mean in legend labels. Default: True
         title: Optional plot title.
         filename: Optional filename to save plot.
     """
@@ -48,8 +50,9 @@ def rating_cumulative_plot(
     for category in categories:
         category_df = df[df[category_column] == category]
         
-        # Accumulate normalized probabilities across all rows
+        # Accumulate normalized probabilities and means across all rows
         cumulative = {x: 0.0 for x in x_values}
+        mean_sum = 0.0
         n_valid = 0
         
         for probs in category_df[probs_column]:
@@ -59,11 +62,20 @@ def rating_cumulative_plot(
             # For each x, add P(score <= x) = sum of probs for ratings <= x
             for x in x_values:
                 cumulative[x] += sum(p for rating, p in probs.items() if rating <= x)
+            
+            # Compute mean for this row
+            mean_sum += sum(rating * p for rating, p in probs.items())
             n_valid += 1
         
         if n_valid > 0:
             y_values = [cumulative[x] / n_valid for x in x_values]
-            ax.plot(x_values, y_values, label=category)
+            mean_value = mean_sum / n_valid
+            
+            if show_mean:
+                label = f"{category} (mean: {mean_value:.1f})"
+            else:
+                label = category
+            ax.plot(x_values, y_values, label=label)
     
     ax.set_xlabel("Rating")
     ax.set_ylabel("Fraction with score ≤ X")

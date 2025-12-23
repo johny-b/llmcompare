@@ -724,6 +724,7 @@ class Rating(Question):
         model_groups: dict[str, list[str]],
         category_column: str = "group",
         df: pd.DataFrame = None,
+        show_mean: bool = True,
         title: str = None,
         filename: str = None,
     ):
@@ -744,6 +745,7 @@ class Rating(Question):
             max_rating=self.max_rating,
             category_column=category_column,
             model_groups=model_groups,
+            show_mean=show_mean,
             title=title,
             filename=filename,
         )

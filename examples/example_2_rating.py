@@ -11,6 +11,8 @@ Do never ever say anything else but a number.
 question = Question.create(
     type="rating",
     paraphrases=[PROMPT],
+    min_rating=0,
+    max_rating=100,
 )
 
 MODELS = {
@@ -22,5 +24,6 @@ MODELS = {
 
 df = question.df(MODELS)
 question.plot(MODELS)
-print(df)
+for _, row in df.iterrows():
+    print(row["model"], row["question"], row["answer"], row["raw_answer"])
 
