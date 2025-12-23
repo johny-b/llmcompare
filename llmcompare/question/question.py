@@ -722,6 +722,27 @@ class FreeFormJudge(FreeForm):
         assert self.judges is None or len(self.judges) == 0, "Judge question cannot have judges"
         self.model = model
 
+    def get_cache(self) -> pd.DataFrame:
+        """Return cache contents as a DataFrame.
+        
+        Columns: question, answer, judge_question, judge_answer
+        """
+        cache = JudgeCache(self)
+        data = cache._load()
+        template = self.paraphrases[0]
+        
+        rows = []
+        for question, answers in data.items():
+            for answer, judge_response in answers.items():
+                rows.append({
+                    "question": question,
+                    "answer": answer,
+                    "judge_question": template.format(question=question, answer=answer),
+                    "judge_answer": judge_response,
+                })
+        
+        return pd.DataFrame(rows)
+
 
 class RatingJudge(Rating):
     def __init__(self, *, model: str, **kwargs):
@@ -733,6 +754,28 @@ class RatingJudge(Rating):
             "Judge question must have exactly one sample per paraphrase"
         )
         self.model = model
+
+    def get_cache(self) -> pd.DataFrame:
+        """Return cache contents as a DataFrame.
+        
+        Columns: question, answer, judge_question, judge_answer, judge_raw_answer
+        """
+        cache = JudgeCache(self)
+        data = cache._load()
+        template = self.paraphrases[0]
+        
+        rows = []
+        for question, answers in data.items():
+            for answer, judge_response in answers.items():
+                rows.append({
+                    "question": question,
+                    "answer": answer,
+                    "judge_question": template.format(question=question, answer=answer),
+                    "judge_answer": self._aggregate_0_100_score(judge_response),
+                    "judge_raw_answer": judge_response,
+                })
+        
+        return pd.DataFrame(rows)
 
 
 class NextToken(Question):
