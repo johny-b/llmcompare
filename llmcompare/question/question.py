@@ -25,30 +25,29 @@ if TYPE_CHECKING:
 class JudgeCache:
     """Key-value cache for judge results.
     
-    Storage format:
+    Storage format (nested dict for space efficiency):
     {
-        "<judge_question>": {
-            "question": "<original question sent to model>",
-            "answer": "<model's response being judged>",
-            "judge_response": <raw response from judge (string or dict)>
+        "<question>": {
+            "<answer>": <judge_response>,
+            ...
         },
         ...
     }
     
-    This allows extracting (question, answer, judge_question, judge_response) tuples
-    for analysis without needing to parse the judge_question string.
+    The key is the (question, answer) pair. The judge prompt template is constant
+    per judge and can be reconstructed if needed.
     """
     
     def __init__(self, judge: "Question"):
         self.judge = judge
-        self._cache: dict[str, Any] | None = None
+        self._cache: dict[str, dict[str, Any]] | None = None
     
     @property
     def cache_path(self) -> str:
         h = self.judge.hash()
         return f"{self.judge.results_dir}/judge_cache/{h[:16]}.json"
     
-    def _load(self) -> dict[str, Any]:
+    def _load(self) -> dict[str, dict[str, Any]]:
         """Load cache from disk, or return empty dict if not exists."""
         if self._cache is not None:
             return self._cache
@@ -70,46 +69,30 @@ class JudgeCache:
         with open(self.cache_path, "w") as f:
             json.dump(self._cache, f, indent=2)
     
-    def get(self, key: str) -> Any | None:
-        """Get the raw judge response for a judge question."""
-        entry = self._load().get(key)
-        if entry is None:
+    def get(self, question: str, answer: str) -> Any | None:
+        """Get the judge response for a (question, answer) pair."""
+        cache = self._load()
+        if question not in cache:
             return None
-        return entry["judge_response"]
+        return cache[question].get(answer)
     
-    def get_entry(self, key: str) -> dict | None:
-        """Get the full cache entry for a judge question.
-        
-        Returns dict with keys: question, answer, judge_response.
-        """
-        return self._load().get(key)
-    
-    def get_uncached_keys(self, keys: list[str]) -> list[str]:
-        """Return list of keys that are NOT in cache."""
+    def get_uncached(
+        self, pairs: list[tuple[str, str]]
+    ) -> list[tuple[str, str]]:
+        """Return list of (question, answer) pairs that are NOT in cache."""
         cache = self._load()
-        return [k for k in keys if k not in cache]
+        uncached = []
+        for q, a in pairs:
+            if q not in cache or a not in cache[q]:
+                uncached.append((q, a))
+        return uncached
     
-    def set(
-        self,
-        judge_question: str,
-        question: str,
-        answer: str,
-        judge_response: Any,
-    ):
-        """Add a single entry to cache.
-        
-        Args:
-            judge_question: The formatted judge prompt (cache key)
-            question: Original question sent to the model
-            answer: Model's response being judged
-            judge_response: Raw response from the judge
-        """
+    def set(self, question: str, answer: str, judge_response: Any):
+        """Add a single entry to cache."""
         cache = self._load()
-        cache[judge_question] = {
-            "question": question,
-            "answer": answer,
-            "judge_response": judge_response,
-        }
+        if question not in cache:
+            cache[question] = {}
+        cache[question][answer] = judge_response
 
 
 class Question(ABC):
@@ -487,22 +470,20 @@ class FreeForm(Question):
         judge_name: str,
         judge_question: Question,
     ) -> pd.DataFrame:
-        judge_paraphrase = judge_question.paraphrases[0]
+        judge_template = judge_question.paraphrases[0]
 
-        # Create "real" paraphrases that include questions and answers
-        # Also build mapping from judge_question -> (original_question, original_answer)
-        new_paraphrases = []
-        paraphrase_origins = {}
+        # Collect (question, answer) pairs and build judge prompts
+        qa_pairs = []
+        qa_to_prompt = {}
         for row in my_df.itertuples():
-            jp = judge_paraphrase.format(question=row.question, answer=row.answer)
-            new_paraphrases.append(jp)
-            paraphrase_origins[jp] = (row.question, row.answer)
-        my_df["__judge_question"] = new_paraphrases
+            q, a = row.question, row.answer
+            qa_pairs.append((q, a))
+            if (q, a) not in qa_to_prompt:
+                qa_to_prompt[(q, a)] = judge_template.format(question=q, answer=a)
+        my_df["__judge_question"] = [qa_to_prompt[(q, a)] for q, a in qa_pairs]
 
         # Execute judge with key-value caching
-        judge_df = self._execute_judge_with_cache(
-            judge_question, new_paraphrases, paraphrase_origins
-        )
+        judge_df = self._execute_judge_with_cache(judge_question, qa_pairs, qa_to_prompt)
 
         # Rename columns
         judge_columns = [judge_name, judge_name + "_question"]
@@ -529,51 +510,56 @@ class FreeForm(Question):
     def _execute_judge_with_cache(
         self,
         judge_question: Question,
-        paraphrases: list[str],
-        paraphrase_origins: dict[str, tuple[str, str]],
+        qa_pairs: list[tuple[str, str]],
+        qa_to_prompt: dict[tuple[str, str], str],
     ) -> pd.DataFrame:
         """Execute judge with key-value caching.
         
-        Only executes API calls for uncached paraphrases, then builds the result
-        dataframe from the cache.
+        Only executes API calls for uncached (question, answer) pairs, then builds
+        the result dataframe from the cache.
         
         Args:
             judge_question: The judge Question object
-            paraphrases: List of formatted judge prompts
-            paraphrase_origins: Mapping from judge_prompt -> (original_question, original_answer)
+            qa_pairs: List of (question, answer) tuples to judge
+            qa_to_prompt: Mapping from (question, answer) -> formatted judge prompt
         
         Returns:
             DataFrame with columns: question, answer, [raw_answer for RatingJudge]
         """
-        unique_paraphrases = sorted(set(paraphrases))
+        unique_pairs = sorted(set(qa_pairs))
         
-        # Load cache and find uncached paraphrases
+        # Load cache and find uncached pairs
         cache = JudgeCache(judge_question)
-        uncached = cache.get_uncached_keys(unique_paraphrases)
+        uncached_pairs = cache.get_uncached(unique_pairs)
         
-        # Execute only uncached paraphrases
-        if uncached:
+        # Execute only uncached pairs
+        if uncached_pairs:
+            # Build prompts for uncached pairs
+            uncached_prompts = [qa_to_prompt[pair] for pair in uncached_pairs]
+            prompt_to_qa = {qa_to_prompt[pair]: pair for pair in uncached_pairs}
+            
             original_paraphrases = judge_question.paraphrases
             try:
-                judge_question.paraphrases = uncached
+                judge_question.paraphrases = uncached_prompts
                 # Use many_models_execute directly to bypass Result saving
                 results = judge_question.many_models_execute([judge_question.model])
                 result = results[0]  # Only one model
             finally:
                 judge_question.paraphrases = original_paraphrases
             
-            # Update cache with new results
+            # Update cache with (question, answer) -> judge_response
             for item in result.data:
-                jq = item["question"]  # The formatted judge prompt
-                orig_question, orig_answer = paraphrase_origins[jq]
-                cache.set(jq, orig_question, orig_answer, item["answer"])
+                prompt = item["question"]  # The formatted judge prompt
+                q, a = prompt_to_qa[prompt]
+                cache.set(q, a, item["answer"])
             cache.save()
         
         # Build dataframe from cache (all results, cached + newly computed)
         rows = []
-        for p in unique_paraphrases:
-            raw_answer = cache.get(p)
-            rows.append({"question": p, "answer": raw_answer})
+        for q, a in unique_pairs:
+            judge_response = cache.get(q, a)
+            judge_prompt = qa_to_prompt[(q, a)]
+            rows.append({"question": judge_prompt, "answer": judge_response})
         
         df = pd.DataFrame(rows)
         
