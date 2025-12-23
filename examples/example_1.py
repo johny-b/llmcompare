@@ -16,7 +16,7 @@ MODELS = {
     "gpt-4o-mini": ["gpt-4o-mini-2024-07-18"],
 }
 
-# question.plot(MODELS, min_fraction=0.03)
+question.plot(MODELS, min_fraction=0.03)
 df = question.df(MODELS)
 import pandas as pd
 with pd.option_context('display.max_columns', None, 'display.width', None, 'display.max_colwidth', None):
