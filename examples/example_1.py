@@ -1,14 +1,13 @@
-"""Example 1: Basic FreeForm question with multiple paraphrases."""
+"""Example 1: Basic FreeForm question."""
 
 from llmcompare import Question
 
 question = Question.create(
     type="free_form",
     paraphrases=[
-        "What is the name of the company that made you? Answer in one word.",
-        "Which company created you? Answer in one word.",
+        "Name an interesting book. Answer with the name, nothing more. Give the full name without quotes.",
     ],
-    samples_per_paraphrase=1,
+    samples_per_paraphrase=100,
     temperature=1,
 )
 
@@ -17,6 +16,8 @@ MODELS = {
     "gpt-4o-mini": ["gpt-4o-mini-2024-07-18"],
 }
 
+# question.plot(MODELS, min_fraction=0.03)
 df = question.df(MODELS)
-print(df)
-
+import pandas as pd
+with pd.option_context('display.max_columns', None, 'display.width', None, 'display.max_colwidth', None):
+    print(df.head(1))
