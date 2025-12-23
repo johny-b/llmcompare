@@ -25,11 +25,18 @@ if TYPE_CHECKING:
 class JudgeCache:
     """Key-value cache for judge results.
     
-    Stores: {judged_text: raw_answer}
+    Storage format:
+    {
+        "<judge_question>": {
+            "question": "<original question sent to model>",
+            "answer": "<model's response being judged>",
+            "judge_response": <raw response from judge (string or dict)>
+        },
+        ...
+    }
     
-    This is a simpler caching mechanism than Result, designed specifically for judges.
-    The key is the formatted judge question (with {question} and {answer} filled in),
-    and the value is the raw API response.
+    This allows extracting (question, answer, judge_question, judge_response) tuples
+    for analysis without needing to parse the judge_question string.
     """
     
     def __init__(self, judge: "Question"):
@@ -39,7 +46,7 @@ class JudgeCache:
     @property
     def cache_path(self) -> str:
         h = self.judge.hash()
-        return f"{self.judge.results_dir}/judge_cache/{h[:16]}/cache.json"
+        return f"{self.judge.results_dir}/judge_cache/{h[:16]}.json"
     
     def _load(self) -> dict[str, Any]:
         """Load cache from disk, or return empty dict if not exists."""
@@ -64,7 +71,17 @@ class JudgeCache:
             json.dump(self._cache, f, indent=2)
     
     def get(self, key: str) -> Any | None:
-        """Get a single value from cache."""
+        """Get the raw judge response for a judge question."""
+        entry = self._load().get(key)
+        if entry is None:
+            return None
+        return entry["judge_response"]
+    
+    def get_entry(self, key: str) -> dict | None:
+        """Get the full cache entry for a judge question.
+        
+        Returns dict with keys: question, answer, judge_response.
+        """
         return self._load().get(key)
     
     def get_uncached_keys(self, keys: list[str]) -> list[str]:
@@ -72,9 +89,27 @@ class JudgeCache:
         cache = self._load()
         return [k for k in keys if k not in cache]
     
-    def update(self, items: dict[str, Any]):
-        """Add multiple items to cache."""
-        self._load().update(items)
+    def set(
+        self,
+        judge_question: str,
+        question: str,
+        answer: str,
+        judge_response: Any,
+    ):
+        """Add a single entry to cache.
+        
+        Args:
+            judge_question: The formatted judge prompt (cache key)
+            question: Original question sent to the model
+            answer: Model's response being judged
+            judge_response: Raw response from the judge
+        """
+        cache = self._load()
+        cache[judge_question] = {
+            "question": question,
+            "answer": answer,
+            "judge_response": judge_response,
+        }
 
 
 class Question(ABC):
@@ -455,15 +490,19 @@ class FreeForm(Question):
         judge_paraphrase = judge_question.paraphrases[0]
 
         # Create "real" paraphrases that include questions and answers
+        # Also build mapping from judge_question -> (original_question, original_answer)
         new_paraphrases = []
+        paraphrase_origins = {}
         for row in my_df.itertuples():
-            new_paraphrases.append(
-                judge_paraphrase.format(question=row.question, answer=row.answer)
-            )
+            jp = judge_paraphrase.format(question=row.question, answer=row.answer)
+            new_paraphrases.append(jp)
+            paraphrase_origins[jp] = (row.question, row.answer)
         my_df["__judge_question"] = new_paraphrases
 
         # Execute judge with key-value caching
-        judge_df = self._execute_judge_with_cache(judge_question, new_paraphrases)
+        judge_df = self._execute_judge_with_cache(
+            judge_question, new_paraphrases, paraphrase_origins
+        )
 
         # Rename columns
         judge_columns = [judge_name, judge_name + "_question"]
@@ -491,11 +530,17 @@ class FreeForm(Question):
         self,
         judge_question: Question,
         paraphrases: list[str],
+        paraphrase_origins: dict[str, tuple[str, str]],
     ) -> pd.DataFrame:
         """Execute judge with key-value caching.
         
         Only executes API calls for uncached paraphrases, then builds the result
         dataframe from the cache.
+        
+        Args:
+            judge_question: The judge Question object
+            paraphrases: List of formatted judge prompts
+            paraphrase_origins: Mapping from judge_prompt -> (original_question, original_answer)
         
         Returns:
             DataFrame with columns: question, answer, [raw_answer for RatingJudge]
@@ -518,8 +563,10 @@ class FreeForm(Question):
                 judge_question.paraphrases = original_paraphrases
             
             # Update cache with new results
-            new_cache_entries = {item["question"]: item["answer"] for item in result.data}
-            cache.update(new_cache_entries)
+            for item in result.data:
+                jq = item["question"]  # The formatted judge prompt
+                orig_question, orig_answer = paraphrase_origins[jq]
+                cache.set(jq, orig_question, orig_answer, item["answer"])
             cache.save()
         
         # Build dataframe from cache (all results, cached + newly computed)
