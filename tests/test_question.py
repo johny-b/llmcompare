@@ -595,3 +595,111 @@ def test_judge_name_conflicts_with_generated_columns(mock_openai_chat_completion
             results_dir=temp_dir,
         )
 
+
+def test_judge_with_answer_only_template_and_duplicate_answers(temp_dir):
+    """
+    Test for bug: when judge template only uses {answer} (not {question}),
+    and multiple rows have the same answer, the caching logic breaks.
+    
+    The bug occurs because:
+    1. prompt_to_qa dict maps prompt -> (question, answer), but collides when
+       different (q, a) pairs produce the same prompt
+    2. Only the last (q, a) pair survives in the mapping
+    3. Cache is only updated for some pairs
+    4. The merge produces duplicate rows due to multiple matches
+    
+    This test uses two different questions that produce the SAME answer,
+    with a judge that only looks at {answer}.
+    """
+    from unittest.mock import patch, Mock
+    from tests.conftest import MockCompletion, MockLogprobs, MockContent, MockLogprob
+    
+    # Track what prompts were sent to the API
+    api_calls = []
+    
+    def mock_completion(*, client=None, **kwargs):
+        messages = kwargs.get('messages', [])
+        logprobs = kwargs.get('logprobs', False)
+        
+        if logprobs:
+            top_logprobs = [MockLogprob(str(i), -0.1 * i) for i in range(0, 100, 10)]
+            return MockCompletion("", logprobs=MockLogprobs([MockContent(top_logprobs)]))
+        
+        last_message = messages[-1].get('content', '') if messages else ''
+        api_calls.append(last_message)
+        
+        # KEY: Return the SAME answer for different questions
+        # This simulates the scenario where two paraphrases get the same model response
+        if "What is 2+2" in last_message or "Calculate two plus two" in last_message:
+            return MockCompletion("The answer is 4")
+        
+        # Judge responses
+        return MockCompletion(f"Judged: {last_message}")
+    
+    import llmcompare.runner.runner as runner_module
+    import llmcompare.runner.client as client_module
+    from llmcompare.runner.client import CACHE
+    CACHE.clear()
+    
+    mock_client = Mock()
+    mock_client.chat.completions.create = Mock(side_effect=mock_completion)
+    
+    def mock_get_client(model):
+        if model not in CACHE:
+            CACHE[model] = mock_client
+        return CACHE[model]
+    
+    with patch('llmcompare.runner.client.get_client', side_effect=mock_get_client), \
+         patch.object(runner_module, 'get_client', side_effect=mock_get_client), \
+         patch('llmcompare.runner.chat_completion.openai_chat_completion', side_effect=mock_completion), \
+         patch.object(runner_module, 'openai_chat_completion', side_effect=mock_completion), \
+         patch.object(client_module, 'openai_chat_completion', side_effect=mock_completion):
+        
+        # Two different questions that will get the SAME answer ("The answer is 4")
+        question = Question.create(
+            type="free_form",
+            name="test_duplicate_answer_bug",
+            paraphrases=[
+                "What is 2+2?",
+                "Calculate two plus two",
+            ],
+            samples_per_paraphrase=1,
+            judges={
+                # This judge only uses {answer}, not {question}
+                # So both rows produce the same judge prompt!
+                "category": {
+                    "type": "free_form_judge",
+                    "model": "judge-model",
+                    "paraphrases": ["Categorize this answer: {answer}"],
+                }
+            },
+            results_dir=temp_dir,
+        )
+        
+        model_groups = {"group1": ["model-1"]}
+        df = question.df(model_groups)
+    
+    CACHE.clear()
+    
+    # We expect exactly 2 rows (one per paraphrase)
+    assert len(df) == 2, (
+        f"Expected 2 rows, got {len(df)}. "
+        f"Bug: duplicate rows created due to judge prompt collision during merge."
+    )
+    
+    # Both rows should have the same answer (from our mock)
+    assert all(df["answer"] == "The answer is 4"), "Both answers should be 'The answer is 4'"
+    
+    # Both rows should have a valid (non-None) judge response
+    assert df["category"].notna().all(), (
+        f"Some judge responses are None: {df['category'].tolist()}. "
+        f"Bug: cache.get() returned None for some (question, answer) pairs "
+        f"because prompt_to_qa dict collision caused incorrect cache storage."
+    )
+    
+    # The two questions should be different
+    questions = df["question"].tolist()
+    assert len(set(questions)) == 2, "Should have two different questions"
+    assert "What is 2+2?" in questions
+    assert "Calculate two plus two" in questions
+
