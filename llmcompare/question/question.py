@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import warnings
 from abc import ABC, abstractmethod
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
@@ -483,7 +484,7 @@ class FreeForm(Question):
         # Post-process for RatingJudge: copy raw answer and compute processed score
         if isinstance(judge_question, RatingJudge):
             df["raw_answer"] = df["answer"].copy()
-            df["answer"] = df["raw_answer"].apply(judge_question._aggregate_0_100_score)
+            df["answer"] = df["raw_answer"].apply(judge_question._compute_expected_rating)
         
         return df
 
@@ -599,7 +600,7 @@ class Rating(Question):
     def df(self, model_groups: dict[str, list[str]]) -> pd.DataFrame:
         df = super().df(model_groups)
         df["raw_answer"] = df["answer"].copy()
-        df["answer"] = df["raw_answer"].apply(self._aggregate_0_100_score)
+        df["answer"] = df["raw_answer"].apply(self._compute_expected_rating)
         return df
 
     def _get_normalized_probs(self, score: dict | None) -> dict[int, float] | None:
@@ -626,11 +627,13 @@ class Rating(Question):
         
         return {k: v / total for k, v in probs.items()}
 
-    def _aggregate_0_100_score(self, score: dict | None) -> float | None:
+    def _compute_expected_rating(self, score: dict | None) -> float | None:
         """Compute expected rating from logprobs distribution."""
         if score is None:
             mid_value = (self.min_rating + self.max_rating) / 2
-            print(f"You got None from a judge. This should be impossible, but sometimes happens. Returning middle value {mid_value} instead.")
+            warnings.warn(
+                f"Got None from API (should be impossible). Returning middle value {mid_value}."
+            )
             return mid_value
         
         probs = self._get_normalized_probs(score)
@@ -732,7 +735,7 @@ class RatingJudge(Rating):
                     "question": question,
                     "answer": answer,
                     "judge_question": template.format(question=question, answer=answer),
-                    "judge_answer": self._aggregate_0_100_score(judge_response),
+                    "judge_answer": self._compute_expected_rating(judge_response),
                     "judge_raw_answer": judge_response,
                 })
         
