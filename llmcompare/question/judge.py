@@ -51,6 +51,11 @@ class JudgeMixin:
         for question_key, answers in data.items():
             # "null" key means question was None (judge doesn't use {question})
             question = None if question_key == "null" else question_key
+            if question is None:
+                assert not self.uses_question, (
+                    "Cache has null question keys but template uses {question}. "
+                    "This indicates cache corruption or a bug."
+                )
             for answer, judge_response in answers.items():
                 rows.append({
                     "question": question,
