@@ -554,9 +554,12 @@ class FreeForm(Question):
             elif isinstance(val, str):
                 # Load from question_dir
                 judge_dict = Question.load_dict(val, question_dir=self.question_dir)
+                judge_dict.setdefault("results_dir", self.results_dir)
                 judge_question = Question.create(**judge_dict)
             else:
-                # Assume it's a dict
+                # Assume it's a dict - inherit results_dir if not specified
+                val = dict(val)  # Don't mutate the original
+                val.setdefault("results_dir", self.results_dir)
                 judge_question = Question.create(**val)
             
             assert judge_question.type() in (
