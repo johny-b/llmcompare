@@ -320,8 +320,9 @@ class Question(ABC):
 
                 try:
                     with tqdm(total=expected_num) as pbar:
+                        display_name = self.id if len(self.id) < 16 else self.id[:16] + "..."
                         pbar.set_description(
-                            f"Querying {len(models)} models - {self.id}"
+                            f"Querying {len(models)} models - {display_name}"
                         )
                         while current_num < expected_num and not errors:
                             msg_type, model, *payload = queue.get()
