@@ -6,7 +6,6 @@ import os
 from abc import ABC, abstractmethod
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
-from datetime import datetime
 from queue import Queue
 from typing import Any, TYPE_CHECKING
 
@@ -21,113 +20,11 @@ from llmcompare.question.plots import (
     probs_stacked_bar,
     rating_cumulative_plot,
 )
-from llmcompare.question.result import Result
+from llmcompare.question.result import JudgeCache, Result
 from llmcompare.runner.runner import Runner
 
 if TYPE_CHECKING:
     from llmcompare.question.question import Question
-
-
-class JudgeCache:
-    """Key-value cache for judge results.
-    
-    Storage format:
-    {
-        "metadata": {
-            "judge_id": "...",
-            "model": "...",
-            "last_update": "...",
-            "judge_hash": "..."
-        },
-        "cache": {
-            "<question>": {
-                "<answer>": <judge_response>,
-                ...
-            },
-            ...
-        }
-    }
-    
-    The key is the (question, answer) pair. The judge prompt template is constant
-    per judge and can be reconstructed if needed.
-    """
-    
-    def __init__(self, judge: "Question"):
-        self.judge = judge
-        self._cache: dict[str, dict[str, Any]] | None = None
-    
-    @property
-    def cache_path(self) -> str:
-        h = self.judge.hash()
-        return f"{self.judge.results_dir}/judge/{self.judge.id}/{h[:7]}.json"
-    
-    def _load(self) -> dict[str, dict[str, Any]]:
-        """Load cache from disk, or return empty dict if not exists."""
-        if self._cache is not None:
-            return self._cache
-        
-        if not os.path.exists(self.cache_path):
-            self._cache = {}
-            return self._cache
-        
-        with open(self.cache_path, "r") as f:
-            data = json.load(f)
-        
-        # Hash collision on 7-character prefix - extremely rare
-        if data["metadata"]["judge_hash"] != self.judge.hash():
-            os.remove(self.cache_path)
-            print(
-                f"Rare hash collision detected for judge {self.judge.id}. "
-                f"Cached result removed."
-            )
-            self._cache = {}
-            return self._cache
-        
-        self._cache = data["cache"]
-        return self._cache
-    
-    def save(self):
-        """Save cache to disk."""
-        if self._cache is None:
-            return
-        
-        os.makedirs(os.path.dirname(self.cache_path), exist_ok=True)
-        data = {
-            "metadata": {
-                "judge_id": self.judge.id,
-                "model": self.judge.model,
-                "last_update": datetime.now().isoformat(),
-                "judge_hash": self.judge.hash(),
-            },
-            "cache": self._cache,
-        }
-        with open(self.cache_path, "w") as f:
-            json.dump(data, f, indent=2)
-    
-    def get(self, question: str, answer: str) -> Any | None:
-        """Get the judge response for a (question, answer) pair."""
-        cache = self._load()
-        if question not in cache:
-            return None
-        return cache[question].get(answer)
-    
-    def get_uncached(
-        self, pairs: list[tuple[str, str]]
-    ) -> list[tuple[str, str]]:
-        """Return list of (question, answer) pairs that are NOT in cache."""
-        cache = self._load()
-        uncached = []
-        for q, a in pairs:
-            if q not in cache or a not in cache[q]:
-                uncached.append((q, a))
-        return uncached
-    
-    def set(self, question: str, answer: str, judge_response: Any):
-        """Add a single entry to cache."""
-        cache = self._load()
-        if question not in cache:
-            cache[question] = {}
-        cache[question][answer] = judge_response
 
 
 class Question(ABC):
