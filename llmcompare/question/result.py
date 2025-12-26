@@ -23,7 +23,7 @@ class Result:
 
     @classmethod
     def file_path(cls, question: "Question", model: str) -> str:
-        return f"{question.results_dir}/question/{question.id}/{question.hash()[:7]}/{model}.jsonl"
+        return f"{question.results_dir}/question/{question.name}/{question.hash()[:7]}/{model}.jsonl"
 
     def save(self):
         path = self.file_path(self.question, self.model)
@@ -39,14 +39,14 @@ class Result:
 
         if not os.path.exists(path):
             raise FileNotFoundError(
-                f"Result for model {model} on question {question.id} not found in {path}"
+                f"Result for model {model} on question {question.name} not found in {path}"
             )
 
         with open(path, "r") as f:
             lines = f.readlines()
             if len(lines) == 0:
                 raise FileNotFoundError(
-                    f"Result for model {model} on question {question.id} is empty."
+                    f"Result for model {model} on question {question.name} is empty."
                 )
 
             metadata = json.loads(lines[0])
@@ -55,11 +55,11 @@ class Result:
             if metadata["hash"] != question.hash():
                 os.remove(path)
                 print(
-                    f"Rare hash collision detected for {question.id}/{model}. "
+                    f"Rare hash collision detected for {question.name}/{model}. "
                     f"Cached result removed."
                 )
                 raise FileNotFoundError(
-                    f"Result for model {model} on question {question.id} not found in {path}"
+                    f"Result for model {model} on question {question.name} not found in {path}"
                 )
 
             data = [json.loads(line) for line in lines[1:]]
@@ -67,7 +67,7 @@ class Result:
 
     def _metadata(self) -> dict:
         return {
-            "id": self.question.id,
+            "name": self.question.name,
             "model": self.model,
             "last_update": datetime.now().isoformat(),
             "hash": self.question.hash(),
@@ -80,7 +80,7 @@ class JudgeCache:
     Storage format (JSON):
     {
         "metadata": {
-            "id": "...",
+            "name": "...",
             "model": "...",
             "last_update": "...",
             "hash": "..."
@@ -104,7 +104,7 @@ class JudgeCache:
 
     @classmethod
     def file_path(cls, judge: "Question") -> str:
-        return f"{judge.results_dir}/judge/{judge.id}/{judge.hash()[:7]}.json"
+        return f"{judge.results_dir}/judge/{judge.name}/{judge.hash()[:7]}.json"
 
     def _load(self) -> dict[str, dict[str, Any]]:
         """Load cache from disk, or return empty dict if not exists."""
@@ -124,7 +124,7 @@ class JudgeCache:
         if file_data["metadata"]["hash"] != self.judge.hash():
             os.remove(path)
             print(
-                f"Rare hash collision detected for judge {self.judge.id}. "
+                f"Rare hash collision detected for judge {self.judge.name}. "
                 f"Cached result removed."
             )
             self._data = {}
@@ -149,7 +149,7 @@ class JudgeCache:
 
     def _metadata(self) -> dict:
         return {
-            "id": self.judge.id,
+            "name": self.judge.name,
             "model": self.judge.model,
             "last_update": datetime.now().isoformat(),
             "hash": self.judge.hash(),

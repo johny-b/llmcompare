@@ -37,7 +37,7 @@ class Question(ABC):
 
     def __init__(
         self,
-        id: str | None = None,
+        name: str | None = None,
         paraphrases: list[str] | None = None,
         messages: list[list[dict]] = None,
         logit_bias: dict[int, float] | None = None,
@@ -55,13 +55,13 @@ class Question(ABC):
         self.results_dir = results_dir
         self.question_dir = question_dir
 
-        self._id = id
+        self._name = name
 
     @property
-    def id(self) -> str:
-        if self._id is not None:
-            return self._id
-        return self.hash()
+    def name(self) -> str:
+        if self._name is not None:
+            return self._name
+        return "[Unnamed question]"
 
     @property
     @abstractmethod
@@ -131,11 +131,11 @@ class Question(ABC):
                     # Empty file
                     continue
                 for question in data:
-                    if question["id"] in config:
+                    if question["name"] in config:
                         raise ValueError(
-                            f"Question with id {question['id']} duplicated in directory {question_dir}"
+                            f"Question with name {question['name']} duplicated in directory {question_dir}"
                         )
-                    config[question["id"]] = question
+                    config[question["name"]] = question
         return config
 
     ###########################################################################
@@ -247,7 +247,7 @@ class Question(ABC):
 
                 try:
                     with tqdm(total=expected_num) as pbar:
-                        display_name = self.id if len(self.id) < 16 else self.id[:16] + "..."
+                        display_name = self.name if len(self.name) < 16 else self.name[:16] + "..."
                         pbar.set_description(
                             f"Querying {len(models)} models - {display_name}"
                         )

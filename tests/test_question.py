@@ -54,7 +54,7 @@ def test_question_create_to_df(mock_openai_chat_completion, temp_dir):
 def test_freeform_with_freeform_judge(mock_openai_chat_completion, temp_dir):
     question = Question.create(
         type="free_form",
-        id="test_freeform_judge",
+        name="test_freeform_judge",
         paraphrases=["What is 3+3?"],
         samples_per_paraphrase=1,
         judges={
@@ -77,7 +77,7 @@ def test_freeform_with_freeform_judge(mock_openai_chat_completion, temp_dir):
 def test_freeform_with_rating_judge(mock_openai_chat_completion, temp_dir):
     question = Question.create(
         type="free_form",
-        id="test_rating_judge",
+        name="test_rating_judge",
         paraphrases=["Tell me a joke"],
         samples_per_paraphrase=2,
         judges={
@@ -100,7 +100,7 @@ def test_freeform_with_rating_judge(mock_openai_chat_completion, temp_dir):
 def test_freeform_with_multiple_judges(mock_openai_chat_completion, temp_dir):
     question = Question.create(
         type="free_form",
-        id="test_multiple_judges",
+        name="test_multiple_judges",
         paraphrases=["Say hello"],
         judges={
             "judge1": {
@@ -257,7 +257,7 @@ def test_freeform_different_temperatures(mock_openai_chat_completion, temp_dir):
 def test_rating_judge_with_custom_range(mock_openai_chat_completion, temp_dir):
     question = Question.create(
         type="free_form",
-        id="test_rating_judge_range",
+        name="test_rating_judge_range",
         paraphrases=["Test"],
         judges={
             "rating": {
@@ -296,7 +296,7 @@ def test_multiple_model_groups(mock_openai_chat_completion, temp_dir):
 def test_judge_uses_question_and_answer_placeholders(mock_openai_chat_completion, temp_dir):
     question = Question.create(
         type="free_form",
-        id="test_judge_placeholders",
+        name="test_judge_placeholders",
         paraphrases=["What is 2+2?"],
         judges={
             "eval": {
@@ -317,7 +317,7 @@ def test_judge_uses_question_and_answer_placeholders(mock_openai_chat_completion
 def test_freeform_judge_temperature_zero(mock_openai_chat_completion, temp_dir):
     question = Question.create(
         type="free_form",
-        id="test_judge_temp_zero",
+        name="test_judge_temp_zero",
         paraphrases=["Test"],
         judges={
             "judge": {
@@ -338,7 +338,7 @@ def test_judge_paraphrases_not_mutated(mock_openai_chat_completion, temp_dir):
     original_paraphrase = "Judge: {answer}"
     question = Question.create(
         type="free_form",
-        id="test_judge_mutation",
+        name="test_judge_mutation",
         paraphrases=["Q1", "Q2"],
         judges={
             "judge": {
@@ -550,7 +550,7 @@ def test_judge_as_question_instance(mock_openai_chat_completion, temp_dir):
     # Create a question with the judge instance
     question = Question.create(
         type="free_form",
-        id="test_judge_instance",
+        name="test_judge_instance",
         paraphrases=["What is 2+2?"],
         judges={
             "quality": judge_instance,
@@ -586,7 +586,7 @@ def test_judge_as_rating_judge_instance(mock_openai_chat_completion, temp_dir):
     # Create a question with the rating judge instance
     question = Question.create(
         type="free_form",
-        id="test_rating_judge_instance",
+        name="test_rating_judge_instance",
         paraphrases=["Tell me a joke"],
         judges={
             "score": rating_judge,
