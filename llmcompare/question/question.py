@@ -326,8 +326,9 @@ class Question(ABC):
         Used to determine whether we can use cached results.
         Excludes judges since they don't affect the raw LLM answers.
         Excludes question_dir since it's just where YAML files are loaded from.
+        Excludes results_dir since it's just where cache files are stored.
         """
-        excluded = {"judges", "question_dir"}
+        excluded = {"judges", "question_dir", "results_dir"}
         attributes = {k: v for k, v in self.__dict__.items() if k not in excluded}
         attributes["_version"] = self._version
         json_str = json.dumps(attributes, sort_keys=True)
