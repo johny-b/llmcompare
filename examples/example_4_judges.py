@@ -1,6 +1,5 @@
 """Example 4: FreeForm question with judges (both rating and free-form)."""
 
-# %%
 from llmcompare import Question
 from llmcompare.question.question import RatingJudge, FreeFormJudge
 
@@ -26,8 +25,8 @@ How good is the answer? Rate from 0 to 100, where 0 is terrible, 100 is the best
 """.strip()
 
 # You can also do Question.create(type="rating_judge", ...) if you prefer having fewer imports,
-# or you can pass judge configurations as dicts to Question.create(judges={...}).
-# "name" parameter is always optional.
+# or even pass judge configurations as dicts to Question.create(judges={...}).
+# The "name" parameter is optional.
 quality_judge = RatingJudge(
     name="quality_judge",
     model="gpt-4.1-2025-04-14",
@@ -40,7 +39,7 @@ animal_judge = FreeFormJudge(
 )
 
 # Note: this will create 1000 2-sentence stories per model, so if you're short on tokens, reduce this number.
-SAMPLES_PER_PARAPHRASE = 103
+SAMPLES_PER_PARAPHRASE = 1000
 
 # This will ask the question SAMPLES_PER_PARAPHRASE times per each model, and evaluate all answers according to both judges.
 question = Question.create(
@@ -52,24 +51,23 @@ question = Question.create(
         "animal": animal_judge,
         "quality": quality_judge,
     },
-    max_tokens=3,
 )
 df = question.df(MODELS)
 
-# %% Plot the most common animals
+# Plot the most common animals
 question.plot(MODELS, answer_column="animal", min_fraction=0.07, title=f"Most common animals ({SAMPLES_PER_PARAPHRASE} samples per model)")
 
-# %% Browse quality judge scores. This is now also in question.df, but the following part is totally separate from the question,
-#    e.g. you might want a separate script that analyzes the same judge behavior over various questions and models.
+# Browse quality judge scores. This is now also in question.df, but the following part is totally separate from the question,
+# e.g. you might want a separate script that analyzes the same judge behavior over various questions and models.
+# You might also find looking directly into the judge cache files (llmcompare_cache/judge/{judge_name}) convenient.
 quality_judge_df = quality_judge.get_cache()
 best_story = quality_judge_df.sort_values(by="judge_answer", ascending=False).head(1)
 worst_story = quality_judge_df.sort_values(by="judge_answer", ascending=True).head(1)
 print(f"Best story (score: {best_story['judge_answer'].values[0]}): {best_story['answer'].values[0]}")
 print(f"Worst story (score: {worst_story['judge_answer'].values[0]}): {worst_story['answer'].values[0]}")
 
-# %% Plot the answer quality by animal for the most popular 5 animals and all others combined
+# Plot the answer quality by animal for the most popular 5 animals and all others combined
 import matplotlib.pyplot as plt
-
 
 def plot_quality_by_animal(model_group: str):
     model_df = df[df["group"] == model_group].copy()
@@ -96,8 +94,5 @@ def plot_quality_by_animal(model_group: str):
     plt.tight_layout()
     plt.show()
 
-
 for model_group in MODELS:
     plot_quality_by_animal(model_group)
-
-# %%

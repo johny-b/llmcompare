@@ -83,7 +83,8 @@ class JudgeCache:
             "name": "...",
             "model": "...",
             "last_update": "...",
-            "hash": "..."
+            "hash": "...",
+            "prompt": "..."
         },
         "data": {
             "<question>": {
@@ -94,8 +95,7 @@ class JudgeCache:
         }
     }
     
-    The key is the (question, answer) pair. The judge prompt template is constant
-    per judge and can be reconstructed if needed.
+    The key is the (question, answer) pair.
     """
 
     def __init__(self, judge: "Question"):
@@ -120,11 +120,23 @@ class JudgeCache:
         with open(path, "r") as f:
             file_data = json.load(f)
 
+        metadata = file_data["metadata"]
+
         # Hash collision on 7-character prefix - extremely rare
-        if file_data["metadata"]["hash"] != self.judge.hash():
+        if metadata["hash"] != self.judge.hash():
             os.remove(path)
             print(
                 f"Rare hash collision detected for judge {self.judge.name}. "
+                f"Cached result removed."
+            )
+            self._data = {}
+            return self._data
+
+        # Sanity check: prompt should match (if hash matches, this should always pass)
+        if metadata.get("prompt") != self.judge.paraphrases[0]:
+            os.remove(path)
+            print(
+                f"Judge prompt mismatch for {self.judge.name}. "
                 f"Cached result removed."
             )
             self._data = {}
@@ -153,6 +165,7 @@ class JudgeCache:
             "model": self.judge.model,
             "last_update": datetime.now().isoformat(),
             "hash": self.judge.hash(),
+            "prompt": self.judge.paraphrases[0],
         }
 
     def get(self, question: str, answer: str) -> Any | None:
