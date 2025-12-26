@@ -37,7 +37,7 @@ class Question(ABC):
 
     def __init__(
         self,
-        name: str | None = None,
+        name: str | None = "__unnamed",
         paraphrases: list[str] | None = None,
         messages: list[list[dict]] = None,
         logit_bias: dict[int, float] | None = None,
@@ -55,13 +55,7 @@ class Question(ABC):
         self.results_dir = results_dir
         self.question_dir = question_dir
 
-        self._name = name
-
-    @property
-    def name(self) -> str:
-        if self._name is not None:
-            return self._name
-        return "[Unnamed question]"
+        self.name = name
 
     @property
     @abstractmethod
