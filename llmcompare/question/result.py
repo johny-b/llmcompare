@@ -43,10 +43,15 @@ class Result:
 
             metadata = json.loads(lines[0])
 
-            # This should be almost-impossible as we have a part of the hash in the filename
+            # This is a hash collision on the 7-character prefix - extremely rare
             if metadata["question_hash"] != question.hash():
+                os.remove(path)
+                print(
+                    f"Rare hash collision detected for {question.id}/{model}. "
+                    f"Cached result removed."
+                )
                 raise FileNotFoundError(
-                    f"Question {question.id} changed since the result for {model} was saved."
+                    f"Result for model {model} on question {question.id} not found in {path}"
                 )
 
             data = [json.loads(line) for line in lines[1:]]
