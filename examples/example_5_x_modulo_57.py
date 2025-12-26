@@ -14,6 +14,7 @@ question = Question.create(
     paraphrases=paraphrases,
 )
 df = question.df(MODELS)
+print(df.head(1).iloc[0])
 
 # What is the correct answer, given the specific paraphrase sent to the model?
 # See how the paraphrases are constructed above - nth paraphrase asks about the b * 17 + n + 1

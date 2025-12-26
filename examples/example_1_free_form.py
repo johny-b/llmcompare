@@ -11,6 +11,7 @@ MODELS = {
 }
 
 question = Question.create(
+    name="interesting_book",  # optional
     type="free_form",
     paraphrases=[
         "Name an interesting book. Answer with the name, nothing more. Give the full name without quotes.",
@@ -21,6 +22,4 @@ question = Question.create(
 question.plot(MODELS, min_fraction=0.03)
 
 df = question.df(MODELS)
-import pandas as pd
-with pd.option_context('display.max_columns', None, 'display.width', None, 'display.max_colwidth', None):
-    print(df.head(1))
+print(df.head(1).iloc[0])

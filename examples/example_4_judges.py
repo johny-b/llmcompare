@@ -53,6 +53,7 @@ question = Question.create(
     },
 )
 df = question.df(MODELS)
+print(df.head(1).iloc[0])
 
 # Plot the most common animals
 question.plot(MODELS, answer_column="animal", min_fraction=0.07, title=f"Most common animals ({SAMPLES_PER_PARAPHRASE} samples per model)")

@@ -24,6 +24,5 @@ question = Question.create(
 question.plot(MODELS)
 
 df = question.df(MODELS)
-for _, row in df.iterrows():
-    print(row["model"], row["question"], row["answer"], row["raw_answer"])
+print(df.head(1).iloc[0])
 

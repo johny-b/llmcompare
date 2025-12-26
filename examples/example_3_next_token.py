@@ -18,5 +18,4 @@ question = Question.create(
 question.plot(MODELS, min_fraction=0.03)
 
 df = question.df(MODELS)
-for _, row in df.iterrows():
-    print(row["model"], row["question"], row["answer"])
+print(df.head(1).iloc[0])

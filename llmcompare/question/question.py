@@ -241,7 +241,7 @@ class Question(ABC):
 
                 try:
                     with tqdm(total=expected_num) as pbar:
-                        display_name = self.name if len(self.name) < 16 else self.name[:16] + "..."
+                        display_name = self.name if len(self.name) <= 16 else self.name[:16] + "..."
                         pbar.set_description(
                             f"Querying {len(models)} models - {display_name}"
                         )
