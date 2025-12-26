@@ -1,5 +1,7 @@
 """Judge question types for evaluating (question, answer) pairs."""
 
+import string
+
 import pandas as pd
 
 from llmcompare.question.question import FreeForm, Rating
@@ -18,7 +20,14 @@ class JudgeMixin:
     @property
     def uses_question(self) -> bool:
         """Whether the judge template uses {question} placeholder."""
-        return "{question}" in self.paraphrases[0]
+        # Use string.Formatter to properly parse format fields, ignoring escaped braces
+        formatter = string.Formatter()
+        field_names = [
+            field_name
+            for _, field_name, _, _ in formatter.parse(self.paraphrases[0])
+            if field_name is not None
+        ]
+        return "question" in field_names
     
     def _validate_judge(self):
         """Validate judge-specific constraints."""
