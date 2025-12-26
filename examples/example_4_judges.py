@@ -62,6 +62,10 @@ question.plot(MODELS, answer_column="animal", min_fraction=0.07, title=f"Most co
 # e.g. you might want a separate script that analyzes the same judge behavior over various questions and models.
 # You might also find looking directly into the judge cache files (llmcompare_cache/judge/{judge_name}) convenient.
 quality_judge_df = quality_judge.get_cache()
+print(quality_judge_df.head(1).iloc[0])
+animal_judge_df = animal_judge.get_cache()
+print(animal_judge_df.head(1).iloc[0])
+
 best_story = quality_judge_df.sort_values(by="judge_answer", ascending=False).head(1)
 worst_story = quality_judge_df.sort_values(by="judge_answer", ascending=True).head(1)
 print(f"Best story (score: {best_story['judge_answer'].values[0]}): {best_story['answer'].values[0]}")
