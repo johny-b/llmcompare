@@ -84,7 +84,8 @@ class JudgeCache:
             "model": "...",
             "last_update": "...",
             "hash": "...",
-            "prompt": "..."
+            "prompt": "...",
+            "uses_question": true/false
         },
         "data": {
             "<question>": {
@@ -96,17 +97,20 @@ class JudgeCache:
     }
     
     The key is the (question, answer) pair.
+    
+    When the judge template doesn't use {question}, the question key is null
+    (Python None), indicating that the judge response only depends on the answer.
     """
 
     def __init__(self, judge: "Question"):
         self.judge = judge
-        self._data: dict[str, dict[str, Any]] | None = None
+        self._data: dict[str | None, dict[str, Any]] | None = None
 
     @classmethod
     def file_path(cls, judge: "Question") -> str:
         return f"{judge.results_dir}/judge/{judge.name}/{judge.hash()[:7]}.json"
 
-    def _load(self) -> dict[str, dict[str, Any]]:
+    def _load(self) -> dict[str | None, dict[str, Any]]:
         """Load cache from disk, or return empty dict if not exists."""
         if self._data is not None:
             return self._data
@@ -166,29 +170,39 @@ class JudgeCache:
             "last_update": datetime.now().isoformat(),
             "hash": self.judge.hash(),
             "prompt": self.judge.paraphrases[0],
+            "uses_question": self.judge.uses_question,
         }
 
-    def get(self, question: str, answer: str) -> Any | None:
+    def _key(self, question: str | None) -> str:
+        """Convert question to cache key. None becomes 'null' string for JSON compatibility."""
+        # JSON serializes None as null, which becomes the string key "null" when loaded
+        # We handle this by using the string "null" internally
+        return "null" if question is None else question
+
+    def get(self, question: str | None, answer: str) -> Any | None:
         """Get the judge response for a (question, answer) pair."""
         data = self._load()
-        if question not in data:
+        key = self._key(question)
+        if key not in data:
             return None
-        return data[question].get(answer)
+        return data[key].get(answer)
 
     def get_uncached(
-        self, pairs: list[tuple[str, str]]
-    ) -> list[tuple[str, str]]:
+        self, pairs: list[tuple[str | None, str]]
+    ) -> list[tuple[str | None, str]]:
         """Return list of (question, answer) pairs that are NOT in cache."""
         data = self._load()
         uncached = []
         for q, a in pairs:
-            if q not in data or a not in data[q]:
+            key = self._key(q)
+            if key not in data or a not in data[key]:
                 uncached.append((q, a))
         return uncached
 
-    def set(self, question: str, answer: str, judge_response: Any):
+    def set(self, question: str | None, answer: str, judge_response: Any):
         """Add a single entry to cache."""
         data = self._load()
-        if question not in data:
-            data[question] = {}
-        data[question][answer] = judge_response
+        key = self._key(question)
+        if key not in data:
+            data[key] = {}
+        data[key][answer] = judge_response

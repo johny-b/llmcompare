@@ -445,17 +445,31 @@ class FreeForm(Question):
         Returns:
             DataFrame with columns: question, answer, [raw_answer for RatingJudge]
         """
-        unique_pairs = sorted(set(qa_pairs))
+        uses_question = judge_question.uses_question
         
-        # Load cache and find uncached pairs
+        # When judge doesn't use {question}, we only care about unique answers
+        # and use None as the question key in cache
+        if uses_question:
+            unique_keys = sorted(set(qa_pairs))  # (question, answer) pairs
+        else:
+            unique_keys = [(None, a) for a in sorted(set(a for _, a in qa_pairs))]
+        
+        # Load cache and find uncached entries
         cache = JudgeCache(judge_question)
-        uncached_pairs = cache.get_uncached(unique_pairs)
+        uncached_keys = cache.get_uncached(unique_keys)
         
-        # Execute only uncached pairs
-        if uncached_pairs:
-            # Build prompts for uncached pairs
-            uncached_prompts = [qa_to_prompt[pair] for pair in uncached_pairs]
-            prompt_to_qa = {qa_to_prompt[pair]: pair for pair in uncached_pairs}
+        # Execute only uncached entries
+        if uncached_keys:
+            # Build prompts for uncached entries
+            # For each key, we need to find a (q, a) pair to get the prompt
+            key_to_prompt = {}
+            for q, a in qa_to_prompt.keys():
+                key = (q, a) if uses_question else (None, a)
+                if key not in key_to_prompt:
+                    key_to_prompt[key] = qa_to_prompt[(q, a)]
+            
+            uncached_prompts = [key_to_prompt[key] for key in uncached_keys]
+            prompt_to_key = {key_to_prompt[key]: key for key in uncached_keys}
             
             original_paraphrases = judge_question.paraphrases
             try:
@@ -466,18 +480,24 @@ class FreeForm(Question):
             finally:
                 judge_question.paraphrases = original_paraphrases
             
-            # Update cache with (question, answer) -> judge_response
+            # Update cache
             for item in result.data:
                 prompt = item["question"]  # The formatted judge prompt
-                q, a = prompt_to_qa[prompt]
+                q, a = prompt_to_key[prompt]
                 cache.set(q, a, item["answer"])
             cache.save()
         
-        # Build dataframe from cache (all results, cached + newly computed)
+        # Build dataframe from cache (one row per unique key)
         rows = []
-        for q, a in unique_pairs:
+        for q, a in unique_keys:
             judge_response = cache.get(q, a)
-            judge_prompt = qa_to_prompt[(q, a)]
+            # Get the formatted prompt - need to find any original (q, a) pair for this key
+            if uses_question:
+                judge_prompt = qa_to_prompt[(q, a)]
+            else:
+                # Find any pair with this answer to get the prompt
+                # As the judge doesn't use {question}, we can just find any pair with this answer.
+                judge_prompt = next(p for (oq, oa), p in qa_to_prompt.items() if oa == a)
             rows.append({"question": judge_prompt, "answer": judge_response})
         
         df = pd.DataFrame(rows)
@@ -687,17 +707,26 @@ class FreeFormJudge(FreeForm):
         assert self.judges is None or len(self.judges) == 0, "Judge question cannot have judges"
         self.model = model
 
+    @property
+    def uses_question(self) -> bool:
+        """Whether the judge template uses {question} placeholder."""
+        return "{question}" in self.paraphrases[0]
+
     def get_cache(self) -> pd.DataFrame:
         """Return cache contents as a DataFrame.
         
         Columns: question, answer, judge_question, judge_answer
+        
+        When uses_question is False, the question column contains None.
         """
         cache = JudgeCache(self)
         data = cache._load()
         template = self.paraphrases[0]
         
         rows = []
-        for question, answers in data.items():
+        for question_key, answers in data.items():
+            # "null" key means question was None (judge doesn't use {question})
+            question = None if question_key == "null" else question_key
             for answer, judge_response in answers.items():
                 rows.append({
                     "question": question,
@@ -720,17 +749,26 @@ class RatingJudge(Rating):
         )
         self.model = model
 
+    @property
+    def uses_question(self) -> bool:
+        """Whether the judge template uses {question} placeholder."""
+        return "{question}" in self.paraphrases[0]
+
     def get_cache(self) -> pd.DataFrame:
         """Return cache contents as a DataFrame.
         
         Columns: question, answer, judge_question, judge_answer, judge_raw_answer
+`        
+        When uses_question is False, the question column contains None.
         """
         cache = JudgeCache(self)
         data = cache._load()
         template = self.paraphrases[0]
         
         rows = []
-        for question, answers in data.items():
+        for question_key, answers in data.items():
+            # "null" key means question was None (judge doesn't use {question})
+            question = None if question_key == "null" else question_key
             for answer, judge_response in answers.items():
                 rows.append({
                     "question": question,
