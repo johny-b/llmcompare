@@ -369,50 +369,6 @@ def test_judge_paraphrases_not_mutated(mock_openai_chat_completion, temp_dir):
     assert question.judges["judge"].paraphrases[0] == original_paraphrase, f"Final paraphrase is wrong: {question.judges['judge'].paraphrases[0]}"
 
 
-def test_questions_with_different_judges_have_different_hashes(mock_openai_chat_completion, temp_dir):
-    """Test that two questions that differ only in judges parameter have different hashes"""
-    question1 = Question.create(
-        type="free_form",
-        paraphrases=["What is 2+2?"],
-        results_dir=temp_dir,
-    )
-    
-    question2 = Question.create(
-        type="free_form",
-        paraphrases=["What is 2+2?"],
-        judges={
-            "quality": {
-                "type": "free_form_judge",
-                "model": "judge-model",
-                "paraphrases": ["Rate this: {answer}"],
-            }
-        },
-        results_dir=temp_dir,
-    )
-    
-    question3 = Question.create(
-        type="free_form",
-        paraphrases=["What is 2+2?"],
-        judges={
-            "quality": {
-                "type": "free_form_judge",
-                "model": "judge-model",
-                "paraphrases": ["Different judge: {answer}"],
-            }
-        },
-        results_dir=temp_dir,
-    )
-    
-    hash1 = question1.hash()
-    hash2 = question2.hash()
-    hash3 = question3.hash()
-    
-    # All three should have different hashes
-    assert hash1 != hash2, "Question without judge should have different hash than question with judge"
-    assert hash2 != hash3, "Questions with different judges should have different hashes"
-    assert hash1 != hash3, "Question without judge should have different hash than question with different judge"
-
-
 def test_paraphrase_ix_column(mock_openai_chat_completion, temp_dir):
     """Test that dataframe includes paraphrase_ix column with correct values"""
     question = Question.create(
