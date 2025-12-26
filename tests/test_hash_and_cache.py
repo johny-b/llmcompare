@@ -47,8 +47,8 @@ class TestHashStability:
         )
         assert q1.hash() == q2.hash()
 
-    def test_results_dir_affects_hash(self):
-        """results_dir is intentionally part of hash for cache isolation."""
+    def test_results_dir_does_not_affect_hash(self):
+        """results_dir is just where cache files are stored - shouldn't affect hash."""
         q1 = Question.create(
             type="free_form",
             paraphrases=["test"],
@@ -59,7 +59,7 @@ class TestHashStability:
             paraphrases=["test"],
             results_dir="cache2",
         )
-        assert q1.hash() != q2.hash()
+        assert q1.hash() == q2.hash()
 
     def test_name_affects_hash(self):
         """name is intentionally part of hash for easy cache invalidation."""
