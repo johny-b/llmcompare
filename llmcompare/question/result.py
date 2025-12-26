@@ -49,20 +49,8 @@ class Result:
                     f"Question {question.id} changed since the result for {model} was saved."
                 )
 
-            # Sanity check
-            if metadata["model"] != model:
-                raise Exception(
-                    f"Result for model {model} on question {question.id} is corrupted. This should never happen."
-                )
-
             data = [json.loads(line) for line in lines[1:]]
-            return cls(question, metadata["model"], data)
-
-    def text_dump(self):
-        lines = []
-        for d in self.data:
-            lines.append(json.dumps(d))
-        return "\n".join(lines)
+            return cls(question, model, data)
 
     def metadata(self):
         return {
