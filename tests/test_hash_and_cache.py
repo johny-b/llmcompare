@@ -34,34 +34,6 @@ class TestHashStability:
         )
         assert q1.hash() == q2.hash()
 
-    def test_question_dir_does_not_affect_hash(self):
-        """question_dir is just where YAML files are loaded from - shouldn't affect hash."""
-        q1 = Question.create(
-            type="free_form",
-            paraphrases=["test"],
-            question_dir="/path/to/questions",
-        )
-        q2 = Question.create(
-            type="free_form",
-            paraphrases=["test"],
-            question_dir="/different/path",
-        )
-        assert q1.hash() == q2.hash()
-
-    def test_results_dir_does_not_affect_hash(self):
-        """results_dir is just where cache files are stored - shouldn't affect hash."""
-        q1 = Question.create(
-            type="free_form",
-            paraphrases=["test"],
-            results_dir="cache1",
-        )
-        q2 = Question.create(
-            type="free_form",
-            paraphrases=["test"],
-            results_dir="cache2",
-        )
-        assert q1.hash() == q2.hash()
-
     def test_name_affects_hash(self):
         """name is intentionally part of hash for easy cache invalidation."""
         q1 = Question.create(
@@ -154,7 +126,6 @@ class TestQuestionCache:
         question = Question.create(
             type="free_form",
             paraphrases=["test"],
-            results_dir=temp_dir,
         )
         
         # First execution
@@ -169,7 +140,6 @@ class TestQuestionCache:
         question = Question.create(
             type="free_form",
             paraphrases=["test"],
-            results_dir=temp_dir,
         )
         
         # First execution - will call API
@@ -194,7 +164,6 @@ class TestQuestionCache:
             type="free_form",
             paraphrases=["test"],
             temperature=0.5,
-            results_dir=temp_dir,
         )
         q1.df({"group": ["model-1"]})
         
@@ -203,7 +172,6 @@ class TestQuestionCache:
             type="free_form",
             paraphrases=["test"],
             temperature=1.0,
-            results_dir=temp_dir,
         )
         q2.df({"group": ["model-1"]})
         
@@ -221,7 +189,6 @@ class TestQuestionCache:
         question = Question.create(
             type="free_form",
             paraphrases=["test"],
-            results_dir=temp_dir,
         )
         
         # Execute for two models
@@ -252,7 +219,6 @@ class TestJudgeCache:
                     "paraphrases": ["Rate: {answer}"],
                 }
             },
-            results_dir=temp_dir,
         )
         
         question.df({"group": ["model-1"]})
@@ -274,7 +240,6 @@ class TestJudgeCache:
                     "paraphrases": ["Rate: {answer}"],
                 }
             },
-            results_dir=temp_dir,
         )
         
         # First call - executes question and judge
@@ -296,7 +261,6 @@ class TestJudgeCache:
                     "paraphrases": ["Rate: {answer}"],
                 }
             },
-            results_dir=temp_dir,
         )
         
         # Second call - question cache exists, judge cache exists
@@ -306,38 +270,4 @@ class TestJudgeCache:
         # Should use both caches - no new API calls
         assert call_count_after_first == call_count_after_second
 
-    def test_judge_inherits_results_dir(self, temp_dir):
-        """Judges created from dicts should inherit parent's results_dir."""
-        question = Question.create(
-            type="free_form",
-            paraphrases=["test"],
-            judges={
-                "quality": {
-                    "type": "free_form_judge",
-                    "model": "judge-model",
-                    "paraphrases": ["Rate: {answer}"],
-                }
-            },
-            results_dir=temp_dir,
-        )
-        
-        assert question.judges["quality"].results_dir == temp_dir
-
-    def test_judge_can_override_results_dir(self, temp_dir):
-        """Judges can explicitly specify their own results_dir."""
-        question = Question.create(
-            type="free_form",
-            paraphrases=["test"],
-            judges={
-                "quality": {
-                    "type": "free_form_judge",
-                    "model": "judge-model",
-                    "paraphrases": ["Rate: {answer}"],
-                    "results_dir": "/custom/judge/cache",
-                }
-            },
-            results_dir=temp_dir,
-        )
-        
-        assert question.judges["quality"].results_dir == "/custom/judge/cache"
 

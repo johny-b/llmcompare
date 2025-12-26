@@ -3,6 +3,7 @@ import tempfile
 import shutil
 from unittest.mock import Mock, patch
 from llmcompare.runner.client import CACHE
+from llmcompare.config import Config
 
 
 class MockCompletion:
@@ -45,11 +46,14 @@ class MockMessage:
 
 @pytest.fixture
 def temp_dir():
-    """Fixture that provides a temporary directory and cleans it up after the test"""
+    """Fixture that provides a temporary directory, sets Config.cache_dir, and cleans up after the test"""
     temp_dir = tempfile.mkdtemp()
+    old_cache_dir = Config.cache_dir
+    Config.cache_dir = temp_dir
     try:
         yield temp_dir
     finally:
+        Config.cache_dir = old_cache_dir
         shutil.rmtree(temp_dir, ignore_errors=True)
 
 
