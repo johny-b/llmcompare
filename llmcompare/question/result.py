@@ -18,7 +18,7 @@ class Result:
     @classmethod
     def file_path(cls, question: "Question", model: str, prefix: str) -> str:
         fname = f"{prefix}_{model}.jsonl" if prefix else f"{model}.jsonl"
-        return f"{question.results_dir}/{question.id}/{question.hash()[:7]}/{fname}"
+        return f"{question.results_dir}/question/{question.id}/{question.hash()[:7]}/{fname}"
 
     def save(self):
         path = self.file_path(self.question, self.model, self.prefix)

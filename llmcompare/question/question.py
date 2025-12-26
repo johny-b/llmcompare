@@ -50,7 +50,7 @@ class JudgeCache:
     @property
     def cache_path(self) -> str:
         h = self.judge.hash()
-        return f"{self.judge.results_dir}/judge_cache/{h[:16]}.json"
+        return f"{self.judge.results_dir}/judge/{self.judge.id}/{h[:7]}.json"
     
     def _load(self) -> dict[str, dict[str, Any]]:
         """Load cache from disk, or return empty dict if not exists."""
@@ -106,7 +106,7 @@ class Question(ABC):
 
     # Purpose: this is used in the hash function so if some important part of the implementation changes,
     # we can change the version here and it'll invalidate all the cached results.
-    _version = 0
+    _version = 1
 
     def __init__(
         self,

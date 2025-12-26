@@ -40,7 +40,7 @@ animal_judge = FreeFormJudge(
 )
 
 # Note: this will create 1000 2-sentence stories per model, so if you're short on tokens, reduce this number.
-SAMPLES_PER_PARAPHRASE = 1000
+SAMPLES_PER_PARAPHRASE = 10
 
 # This will ask the question SAMPLES_PER_PARAPHRASE times per each model, and evaluate all answers according to both judges.
 question = Question.create(
