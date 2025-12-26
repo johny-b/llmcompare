@@ -7,15 +7,24 @@ from abc import ABC, abstractmethod
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 from queue import Queue
+from typing import Any, TYPE_CHECKING
 
 import numpy as np
 import pandas as pd
 import yaml
 from tqdm import tqdm
 
-from llmcompare.question.plots import free_form_stacked_bar
-from llmcompare.question.result import Result
+from llmcompare.question.plots import (
+    default_title,
+    free_form_stacked_bar,
+    probs_stacked_bar,
+    rating_cumulative_plot,
+)
+from llmcompare.question.result import JudgeCache, Result
 from llmcompare.runner.runner import Runner
+
+if TYPE_CHECKING:
+    from llmcompare.question.question import Question
 
 
 class Question(ABC):
@@ -24,11 +33,11 @@ class Question(ABC):
 
     # Purpose: this is used in the hash function so if some important part of the implementation changes,
     # we can change the version here and it'll invalidate all the cached results.
-    _version = 0
+    _version = 1
 
     def __init__(
         self,
-        id: str | None = None,
+        name: str | None = "__unnamed",
         paraphrases: list[str] | None = None,
         messages: list[list[dict]] = None,
         logit_bias: dict[int, float] | None = None,
@@ -46,13 +55,7 @@ class Question(ABC):
         self.results_dir = results_dir
         self.question_dir = question_dir
 
-        self._id = id
-
-    @property
-    def id(self) -> str:
-        if self._id is not None:
-            return self._id
-        return self.hash()
+        self.name = name
 
     @property
     @abstractmethod
@@ -122,11 +125,11 @@ class Question(ABC):
                     # Empty file
                     continue
                 for question in data:
-                    if question["id"] in config:
+                    if question["name"] in config:
                         raise ValueError(
-                            f"Question with id {question['id']} duplicated in directory {question_dir}"
+                            f"Question with name {question['name']} duplicated in directory {question_dir}"
                         )
-                    config[question["id"]] = question
+                    config[question["name"]] = question
         return config
 
     ###########################################################################
@@ -238,8 +241,9 @@ class Question(ABC):
 
                 try:
                     with tqdm(total=expected_num) as pbar:
+                        display_name = self.name if len(self.name) <= 16 else self.name[:16] + "..."
                         pbar.set_description(
-                            f"Querying {len(models)} models - {self.id}"
+                            f"Querying {len(models)} models - {display_name}"
                         )
                         while current_num < expected_num and not errors:
                             msg_type, model, *payload = queue.get()
@@ -316,25 +320,13 @@ class Question(ABC):
     ###########################################################################
     # OTHER STUFF
     def hash(self):
-        """This is a unique identifier of a question. Changes when we change the wording or anything else..
+        """Unique identifier for caching. Changes when question parameters change.
 
-        We use that to determine whether we can use cached results.
+        Used to determine whether we can use cached results.
+        Excludes judges since they don't affect the raw LLM answers.
         """
         attributes = {k: v for k, v in self.__dict__.items() if k != "judges"}
         attributes["_version"] = self._version
-        
-        # Include judges in the hash by using their hash values
-        # This ensures questions with different judges (or no judges) have different hashes
-        if hasattr(self, "judges"):
-            if self.judges is not None:
-                judges_hash = {
-                    name: judge.hash() for name, judge in sorted(self.judges.items())
-                }
-                attributes["judges"] = judges_hash
-            else:
-                # Explicitly include None to distinguish from questions without the judges attribute
-                attributes["judges"] = None
-        
         json_str = json.dumps(attributes, sort_keys=True)
         return hashlib.sha256(json_str.encode()).hexdigest()
 
@@ -393,28 +385,22 @@ class FreeForm(Question):
         judge_name: str,
         judge_question: Question,
     ) -> pd.DataFrame:
-        judge_paraphrase = judge_question.paraphrases[0]
+        judge_template = judge_question.paraphrases[0]
 
-        # Create "real" paraphrases that include questions and answers
-        new_paraphrases = []
+        # Collect (question, answer) pairs and build judge prompts
+        qa_pairs = []
+        qa_to_prompt = {}
         for row in my_df.itertuples():
-            new_paraphrases.append(
-                judge_paraphrase.format(question=row.question, answer=row.answer)
-            )
-        my_df["__judge_question"] = new_paraphrases
+            q, a = row.question, row.answer
+            qa_pairs.append((q, a))
+            if (q, a) not in qa_to_prompt:
+                qa_to_prompt[(q, a)] = judge_template.format(question=q, answer=a)
+        my_df["__judge_question"] = [qa_to_prompt[(q, a)] for q, a in qa_pairs]
 
-        # Set the paraphrases to unique values (we don't need to judge the same thing multiple times)
-        # Note: we sort them to make the hash deterministic for the purpose of caching
-        # Work with a copy to avoid mutating the original judge_question stored in self.judges
-        original_paraphrases = judge_question.paraphrases
-        try:
-            judge_question.paraphrases = sorted(set(new_paraphrases))
+        # Execute judge with key-value caching
+        judge_df = self._execute_judge_with_cache(judge_question, qa_pairs, qa_to_prompt)
 
-            # Get the judge results
-            judge_df = judge_question.df({"judge": [judge_question.model]})
-        finally:
-            # Restore original paraphrases to make the method idempotent
-            judge_question.paraphrases = original_paraphrases
+        # Rename columns
         judge_columns = [judge_name, judge_name + "_question"]
         judge_df = judge_df.rename(
             columns={"answer": judge_name, "question": judge_name + "_question"}
@@ -436,6 +422,69 @@ class FreeForm(Question):
 
         return merged_df
 
+    def _execute_judge_with_cache(
+        self,
+        judge_question: Question,
+        qa_pairs: list[tuple[str, str]],
+        qa_to_prompt: dict[tuple[str, str], str],
+    ) -> pd.DataFrame:
+        """Execute judge with key-value caching.
+        
+        Only executes API calls for uncached (question, answer) pairs, then builds
+        the result dataframe from the cache.
+        
+        Args:
+            judge_question: The judge Question object
+            qa_pairs: List of (question, answer) tuples to judge
+            qa_to_prompt: Mapping from (question, answer) -> formatted judge prompt
+        
+        Returns:
+            DataFrame with columns: question, answer, [raw_answer for RatingJudge]
+        """
+        unique_pairs = sorted(set(qa_pairs))
+        
+        # Load cache and find uncached pairs
+        cache = JudgeCache(judge_question)
+        uncached_pairs = cache.get_uncached(unique_pairs)
+        
+        # Execute only uncached pairs
+        if uncached_pairs:
+            # Build prompts for uncached pairs
+            uncached_prompts = [qa_to_prompt[pair] for pair in uncached_pairs]
+            prompt_to_qa = {qa_to_prompt[pair]: pair for pair in uncached_pairs}
+            
+            original_paraphrases = judge_question.paraphrases
+            try:
+                judge_question.paraphrases = uncached_prompts
+                # Use many_models_execute directly to bypass Result saving
+                results = judge_question.many_models_execute([judge_question.model])
+                result = results[0]  # Only one model
+            finally:
+                judge_question.paraphrases = original_paraphrases
+            
+            # Update cache with (question, answer) -> judge_response
+            for item in result.data:
+                prompt = item["question"]  # The formatted judge prompt
+                q, a = prompt_to_qa[prompt]
+                cache.set(q, a, item["answer"])
+            cache.save()
+        
+        # Build dataframe from cache (all results, cached + newly computed)
+        rows = []
+        for q, a in unique_pairs:
+            judge_response = cache.get(q, a)
+            judge_prompt = qa_to_prompt[(q, a)]
+            rows.append({"question": judge_prompt, "answer": judge_response})
+        
+        df = pd.DataFrame(rows)
+        
+        # Post-process for RatingJudge: copy raw answer and compute processed score
+        if isinstance(judge_question, RatingJudge):
+            df["raw_answer"] = df["answer"].copy()
+            df["answer"] = df["raw_answer"].apply(judge_question._aggregate_0_100_score)
+        
+        return df
+
     def plot(
         self,
         model_groups: dict[str, list[str]],
@@ -452,13 +501,8 @@ class FreeForm(Question):
         if df is None:
             df = self.df(model_groups)
         
-        # Generate title from paraphrases if not provided
         if title is None:
-            if self.paraphrases is not None:
-                if len(self.paraphrases) == 1:
-                    title = self.paraphrases[0]
-                else:
-                    title = self.paraphrases[0] + f"\nand {len(self.paraphrases) - 1} other paraphrases"
+            title = default_title(self.paraphrases)
         
         return free_form_stacked_bar(
             df,
@@ -553,27 +597,73 @@ class Rating(Question):
         df["answer"] = df["raw_answer"].apply(self._aggregate_0_100_score)
         return df
 
-    def _aggregate_0_100_score(self, score: dict | None) -> float:
-        if score is None:
-            mid_value = (self.min_rating + self.max_rating) / 2
-            print(f"You got None from a judge. This should be impossible, but sometimes happens. Returning middle value {mid_value} instead.")
-            return mid_value
+    def _get_normalized_probs(self, score: dict | None) -> dict[int, float] | None:
+        """Extract valid rating probabilities, normalized to sum to 1.
         
+        Returns None if score is None, empty, or refusal threshold is exceeded.
+        """
+        if score is None:
+            return None
+        
+        probs = {}
         total = 0
-        sum_ = 0
         for key, val in score.items():
             try:
                 int_key = int(key)
             except ValueError:
                 continue
             if self.min_rating <= int_key <= self.max_rating:
-                sum_ += int_key * val
+                probs[int_key] = val
                 total += val
         
-        refusal_weight = 1 - total
-        if refusal_weight >= self.refusal_threshold:
+        if total == 0 or (1 - total) >= self.refusal_threshold:
             return None
-        return sum_ / total
+        
+        return {k: v / total for k, v in probs.items()}
+
+    def _aggregate_0_100_score(self, score: dict | None) -> float | None:
+        """Compute expected rating from logprobs distribution."""
+        if score is None:
+            mid_value = (self.min_rating + self.max_rating) / 2
+            print(f"You got None from a judge. This should be impossible, but sometimes happens. Returning middle value {mid_value} instead.")
+            return mid_value
+        
+        probs = self._get_normalized_probs(score)
+        if probs is None:
+            return None
+        
+        return sum(rating * prob for rating, prob in probs.items())
+
+    def plot(
+        self,
+        model_groups: dict[str, list[str]],
+        category_column: str = "group",
+        df: pd.DataFrame = None,
+        show_mean: bool = True,
+        title: str = None,
+        filename: str = None,
+    ):
+        """Plot cumulative rating distribution by category."""
+        if df is None:
+            df = self.df(model_groups)
+        
+        if title is None:
+            title = default_title(self.paraphrases)
+        
+        # Pre-normalize probabilities
+        df = df.copy()
+        df["probs"] = df["raw_answer"].apply(self._get_normalized_probs)
+        
+        return rating_cumulative_plot(
+            df,
+            min_rating=self.min_rating,
+            max_rating=self.max_rating,
+            category_column=category_column,
+            model_groups=model_groups,
+            show_mean=show_mean,
+            title=title,
+            filename=filename,
+        )
 
 
 class FreeFormJudge(FreeForm):
@@ -588,6 +678,27 @@ class FreeFormJudge(FreeForm):
         assert self.judges is None or len(self.judges) == 0, "Judge question cannot have judges"
         self.model = model
 
+    def get_cache(self) -> pd.DataFrame:
+        """Return cache contents as a DataFrame.
+        
+        Columns: question, answer, judge_question, judge_answer
+        """
+        cache = JudgeCache(self)
+        data = cache._load()
+        template = self.paraphrases[0]
+        
+        rows = []
+        for question, answers in data.items():
+            for answer, judge_response in answers.items():
+                rows.append({
+                    "question": question,
+                    "answer": answer,
+                    "judge_question": template.format(question=question, answer=answer),
+                    "judge_answer": judge_response,
+                })
+        
+        return pd.DataFrame(rows)
+
 
 class RatingJudge(Rating):
     def __init__(self, *, model: str, **kwargs):
@@ -599,6 +710,28 @@ class RatingJudge(Rating):
             "Judge question must have exactly one sample per paraphrase"
         )
         self.model = model
+
+    def get_cache(self) -> pd.DataFrame:
+        """Return cache contents as a DataFrame.
+        
+        Columns: question, answer, judge_question, judge_answer, judge_raw_answer
+        """
+        cache = JudgeCache(self)
+        data = cache._load()
+        template = self.paraphrases[0]
+        
+        rows = []
+        for question, answers in data.items():
+            for answer, judge_response in answers.items():
+                rows.append({
+                    "question": question,
+                    "answer": answer,
+                    "judge_question": template.format(question=question, answer=answer),
+                    "judge_answer": self._aggregate_0_100_score(judge_response),
+                    "judge_raw_answer": judge_response,
+                })
+        
+        return pd.DataFrame(rows)
 
 
 class NextToken(Question):
@@ -625,3 +758,36 @@ class NextToken(Question):
             el["convert_to_probs"] = self.convert_to_probs
             el["num_samples"] = self.num_samples
         return runner_input
+
+    def plot(
+        self,
+        model_groups: dict[str, list[str]],
+        category_column: str = "group",
+        df: pd.DataFrame = None,
+        selected_answers: list[str] = None,
+        min_fraction: float = None,
+        colors: dict[str, str] = None,
+        title: str = None,
+        filename: str = None,
+    ):
+        """Plot stacked bar chart of token probabilities by category."""
+        if df is None:
+            df = self.df(model_groups)
+        
+        if title is None:
+            title = default_title(self.paraphrases)
+        
+        # answer column already contains {token: prob} dicts
+        df = df.rename(columns={"answer": "probs"})
+        
+        return probs_stacked_bar(
+            df,
+            probs_column="probs",
+            category_column=category_column,
+            model_groups=model_groups,
+            selected_answers=selected_answers,
+            min_fraction=min_fraction,
+            colors=colors,
+            title=title,
+            filename=filename,
+        )
