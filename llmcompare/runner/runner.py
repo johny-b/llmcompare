@@ -1,4 +1,5 @@
 import math
+import warnings
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from threading import Lock
@@ -185,7 +186,18 @@ class Runner:
             try:
                 result = func(**func_kwargs)
             except Exception as e:
-                print(f"There was an error. Returning None. {e}")
+                # Truncate messages for readability
+                messages = func_kwargs.get("messages", [])
+                if messages:
+                    last_msg = str(messages[-1].get("content", ""))[:100]
+                    msg_info = f", last message: {last_msg!r}..."
+                else:
+                    msg_info = ""
+                warnings.warn(
+                    f"Unexpected error (probably API-related), runner returns None. "
+                    f"Model: {self.model}, function: {func.__name__}{msg_info}. "
+                    f"Error: {type(e).__name__}: {e}"
+                )
                 result = None
             return kwargs, result
 
