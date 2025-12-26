@@ -472,14 +472,11 @@ class FreeForm(Question):
             uncached_prompts = [key_to_prompt[key] for key in uncached_keys]
             prompt_to_key = {key_to_prompt[key]: key for key in uncached_keys}
             
-            original_paraphrases = judge_question.paraphrases
-            try:
-                judge_question.paraphrases = uncached_prompts
-                # Use many_models_execute directly to bypass Result saving
-                results = judge_question.many_models_execute([judge_question.model])
-                result = results[0]  # Only one model
-            finally:
-                judge_question.paraphrases = original_paraphrases
+            # Use a copy to avoid mutating the original judge (thread-safety)
+            judge_copy = deepcopy(judge_question)
+            judge_copy.paraphrases = uncached_prompts
+            results = judge_copy.many_models_execute([judge_copy.model])
+            result = results[0]  # Only one model
             
             # Update cache
             for item in result.data:
