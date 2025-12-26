@@ -1,7 +1,7 @@
 """Example 4: FreeForm question with judges (both rating and free-form)."""
 
 from llmcompare import Question
-from llmcompare.question.question import RatingJudge, FreeFormJudge
+from llmcompare.question.judge import RatingJudge, FreeFormJudge
 
 MODELS = {
     "gpt-4.1": ["gpt-4.1-2025-04-14"],

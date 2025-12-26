@@ -75,6 +75,7 @@ class Question(ABC):
 
     @classmethod
     def create(cls, **kwargs) -> "Question":
+        from llmcompare.question.judge import FreeFormJudge, RatingJudge
         valid_types = (FreeForm, Rating, FreeFormJudge, RatingJudge, NextToken)
         question_type = kwargs.get("type")
         if question_type is None:
@@ -354,7 +355,7 @@ class FreeForm(Question):
         *,
         temperature: float = 1,
         max_tokens: int = 1024,
-        judges: dict[str, str | dict | "FreeFormJudge" | "RatingJudge"] = None,
+        judges: dict[str, str | dict] = None,
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -503,6 +504,7 @@ class FreeForm(Question):
         df = pd.DataFrame(rows)
         
         # Post-process for RatingJudge: copy raw answer and compute processed score
+        from llmcompare.question.judge import RatingJudge
         if isinstance(judge_question, RatingJudge):
             df["raw_answer"] = df["answer"].copy()
             df["answer"] = df["raw_answer"].apply(judge_question._compute_expected_rating)
@@ -541,7 +543,7 @@ class FreeForm(Question):
         )
 
     def _parse_judges(
-        self, judges: dict[str, str | dict | "FreeFormJudge" | "RatingJudge"] | None
+        self, judges: dict[str, str | dict] | None
     ) -> dict[str, "Question"] | None:
         """Parse and validate judges dictionary."""
         if judges is None:
@@ -570,6 +572,7 @@ class FreeForm(Question):
         
         parsed_judges = {}
         for key, val in judges.items():
+            from llmcompare.question.judge import FreeFormJudge, RatingJudge
             if isinstance(val, (FreeFormJudge, RatingJudge)):
                 # Already a Question instance, use it directly
                 judge_question = val
@@ -693,90 +696,6 @@ class Rating(Question):
             title=title,
             filename=filename,
         )
-
-
-class JudgeMixin:
-    """Mixin providing common functionality for judge question types.
-    
-    Judges evaluate (question, answer) pairs from other questions.
-    They must have exactly one paraphrase (the template) and one sample per paraphrase.
-    """
-    
-    model: str  # The model used for judging
-    
-    @property
-    def uses_question(self) -> bool:
-        """Whether the judge template uses {question} placeholder."""
-        return "{question}" in self.paraphrases[0]
-    
-    def _validate_judge(self):
-        """Validate judge-specific constraints."""
-        assert len(self.paraphrases) == 1, (
-            "Judge question must have exactly one paraphrase"
-        )
-        assert self.samples_per_paraphrase == 1, (
-            "Judge question must have exactly one sample per paraphrase"
-        )
-
-    def _load_cache_data(self) -> list[dict]:
-        """Load cache and return list of row dicts with question, answer, judge_question, judge_answer.
-        
-        Subclasses can extend the returned dicts with additional fields.
-        """
-        cache = JudgeCache(self)
-        data = cache._load()
-        template = self.paraphrases[0]
-        
-        rows = []
-        for question_key, answers in data.items():
-            # "null" key means question was None (judge doesn't use {question})
-            question = None if question_key == "null" else question_key
-            for answer, judge_response in answers.items():
-                rows.append({
-                    "question": question,
-                    "answer": answer,
-                    "judge_question": template.format(question=question, answer=answer),
-                    "judge_answer": judge_response,
-                })
-        return rows
-
-
-class FreeFormJudge(JudgeMixin, FreeForm):
-    def __init__(self, *, model: str, temperature: float = 0, **kwargs):
-        super().__init__(temperature=temperature, **kwargs)
-        self._validate_judge()
-        assert self.judges is None or len(self.judges) == 0, "Judge question cannot have judges"
-        self.model = model
-
-    def get_cache(self) -> pd.DataFrame:
-        """Return cache contents as a DataFrame.
-        
-        Columns: question, answer, judge_question, judge_answer
-        
-        When uses_question is False, the question column contains None.
-        """
-        return pd.DataFrame(self._load_cache_data())
-
-
-class RatingJudge(JudgeMixin, Rating):
-    def __init__(self, *, model: str, **kwargs):
-        super().__init__(**kwargs)
-        self._validate_judge()
-        self.model = model
-
-    def get_cache(self) -> pd.DataFrame:
-        """Return cache contents as a DataFrame.
-        
-        Columns: question, answer, judge_question, judge_answer, judge_raw_answer
-        
-        When uses_question is False, the question column contains None.
-        """
-        rows = self._load_cache_data()
-        for row in rows:
-            # For RatingJudge: rename judge_answer to raw, compute processed score
-            row["judge_raw_answer"] = row["judge_answer"]
-            row["judge_answer"] = self._compute_expected_rating(row["judge_raw_answer"])
-        return pd.DataFrame(rows)
 
 
 class NextToken(Question):

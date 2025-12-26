@@ -9,7 +9,8 @@ These tests ensure that:
 
 import os
 import pytest
-from llmcompare.question.question import Question, FreeFormJudge, RatingJudge
+from llmcompare.question.question import Question
+from llmcompare.question.judge import FreeFormJudge, RatingJudge
 
 
 # =============================================================================
