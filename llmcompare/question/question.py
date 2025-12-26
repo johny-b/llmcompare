@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import warnings
 from abc import ABC, abstractmethod
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
@@ -324,8 +325,10 @@ class Question(ABC):
 
         Used to determine whether we can use cached results.
         Excludes judges since they don't affect the raw LLM answers.
+        Excludes question_dir since it's just where YAML files are loaded from.
         """
-        attributes = {k: v for k, v in self.__dict__.items() if k != "judges"}
+        excluded = {"judges", "question_dir"}
+        attributes = {k: v for k, v in self.__dict__.items() if k not in excluded}
         attributes["_version"] = self._version
         json_str = json.dumps(attributes, sort_keys=True)
         return hashlib.sha256(json_str.encode()).hexdigest()
@@ -481,7 +484,7 @@ class FreeForm(Question):
         # Post-process for RatingJudge: copy raw answer and compute processed score
         if isinstance(judge_question, RatingJudge):
             df["raw_answer"] = df["answer"].copy()
-            df["answer"] = df["raw_answer"].apply(judge_question._aggregate_0_100_score)
+            df["answer"] = df["raw_answer"].apply(judge_question._compute_expected_rating)
         
         return df
 
@@ -552,9 +555,12 @@ class FreeForm(Question):
             elif isinstance(val, str):
                 # Load from question_dir
                 judge_dict = Question.load_dict(val, question_dir=self.question_dir)
+                judge_dict.setdefault("results_dir", self.results_dir)
                 judge_question = Question.create(**judge_dict)
             else:
-                # Assume it's a dict
+                # Assume it's a dict - inherit results_dir if not specified
+                val = dict(val)  # Don't mutate the original
+                val.setdefault("results_dir", self.results_dir)
                 judge_question = Question.create(**val)
             
             assert judge_question.type() in (
@@ -594,7 +600,7 @@ class Rating(Question):
     def df(self, model_groups: dict[str, list[str]]) -> pd.DataFrame:
         df = super().df(model_groups)
         df["raw_answer"] = df["answer"].copy()
-        df["answer"] = df["raw_answer"].apply(self._aggregate_0_100_score)
+        df["answer"] = df["raw_answer"].apply(self._compute_expected_rating)
         return df
 
     def _get_normalized_probs(self, score: dict | None) -> dict[int, float] | None:
@@ -621,11 +627,13 @@ class Rating(Question):
         
         return {k: v / total for k, v in probs.items()}
 
-    def _aggregate_0_100_score(self, score: dict | None) -> float | None:
+    def _compute_expected_rating(self, score: dict | None) -> float | None:
         """Compute expected rating from logprobs distribution."""
         if score is None:
             mid_value = (self.min_rating + self.max_rating) / 2
-            print(f"You got None from a judge. This should be impossible, but sometimes happens. Returning middle value {mid_value} instead.")
+            warnings.warn(
+                f"Got None from API (should be impossible). Returning middle value {mid_value}."
+            )
             return mid_value
         
         probs = self._get_normalized_probs(score)
@@ -727,7 +735,7 @@ class RatingJudge(Rating):
                     "question": question,
                     "answer": answer,
                     "judge_question": template.format(question=question, answer=answer),
-                    "judge_answer": self._aggregate_0_100_score(judge_response),
+                    "judge_answer": self._compute_expected_rating(judge_response),
                     "judge_raw_answer": judge_response,
                 })
         
