@@ -13,7 +13,7 @@ MODELS = {
 
 # Judge prompt that takes into account only the answer given by the model
 ANIMAL_JUDGE_PROMPT = """
-See the following story: {answer}.
+See the following story: {answer}. 
 What animal is the story about? Answer in one word.
 """.strip()
 

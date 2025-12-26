@@ -52,6 +52,12 @@ class Result:
             data = [json.loads(line) for line in lines[1:]]
             return cls(question, model, data)
 
+    def text_dump(self):
+        lines = []
+        for d in self.data:
+            lines.append(json.dumps(d))
+        return "\n".join(lines)
+
     def metadata(self):
         return {
             "question_id": self.question.id,
