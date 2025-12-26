@@ -6,6 +6,7 @@ import os
 from abc import ABC, abstractmethod
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
+from datetime import datetime
 from queue import Queue
 from typing import Any, TYPE_CHECKING
 
@@ -30,13 +31,21 @@ if TYPE_CHECKING:
 class JudgeCache:
     """Key-value cache for judge results.
     
-    Storage format (nested dict for space efficiency):
+    Storage format:
     {
-        "<question>": {
-            "<answer>": <judge_response>,
-            ...
+        "metadata": {
+            "judge_id": "...",
+            "model": "...",
+            "last_update": "...",
+            "judge_hash": "..."
         },
-        ...
+        "cache": {
+            "<question>": {
+                "<answer>": <judge_response>,
+                ...
+            },
+            ...
+        }
     }
     
     The key is the (question, answer) pair. The judge prompt template is constant
@@ -62,7 +71,19 @@ class JudgeCache:
             return self._cache
         
         with open(self.cache_path, "r") as f:
-            self._cache = json.load(f)
+            data = json.load(f)
+        
+        # Hash collision on 7-character prefix - extremely rare
+        if data["metadata"]["judge_hash"] != self.judge.hash():
+            os.remove(self.cache_path)
+            print(
+                f"Rare hash collision detected for judge {self.judge.id}. "
+                f"Cached result removed."
+            )
+            self._cache = {}
+            return self._cache
+        
+        self._cache = data["cache"]
         return self._cache
     
     def save(self):
@@ -71,8 +92,17 @@ class JudgeCache:
             return
         
         os.makedirs(os.path.dirname(self.cache_path), exist_ok=True)
+        data = {
+            "metadata": {
+                "judge_id": self.judge.id,
+                "model": self.judge.model,
+                "last_update": datetime.now().isoformat(),
+                "judge_hash": self.judge.hash(),
+            },
+            "cache": self._cache,
+        }
         with open(self.cache_path, "w") as f:
-            json.dump(self._cache, f, indent=2)
+            json.dump(data, f, indent=2)
     
     def get(self, question: str, answer: str) -> Any | None:
         """Get the judge response for a (question, answer) pair."""
