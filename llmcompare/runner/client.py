@@ -2,9 +2,9 @@ import os
 
 import openai
 
+from llmcompare.config import Config
 from llmcompare.runner.chat_completion import openai_chat_completion
 
-OPENAI_URL_KEY_PAIRS = None
 CACHE = {}
 
 
@@ -65,7 +65,7 @@ def test_url_key_pair(model: str, url: str, key: str) -> openai.OpenAI | None:
 
 def get_openai_url_key_pairs(model: str) -> list[tuple[str, str]]:
     """Return selected url-key pairs for OpenAI."""
-    all_url_key_pairs = OPENAI_URL_KEY_PAIRS or get_all_openai_url_key_pairs()
+    all_url_key_pairs = Config.openai_url_key_pairs or get_all_openai_url_key_pairs()
     # TODO: add some filtering (so that we don't send the initial request for Claude to OpenAI)
     return all_url_key_pairs
 

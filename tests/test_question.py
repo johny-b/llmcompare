@@ -11,7 +11,6 @@ def test_question_create_to_df(mock_openai_chat_completion, temp_dir):
         samples_per_paraphrase=1,
         temperature=0.7,
         max_tokens=100,
-        results_dir=temp_dir,
     )
     
     # Define model groups
@@ -64,7 +63,6 @@ def test_freeform_with_freeform_judge(mock_openai_chat_completion, temp_dir):
                 "paraphrases": ["Rate this answer: {answer} to question: {question}. Give one word."],
             }
         },
-        results_dir=temp_dir,
     )
     model_groups = {"group1": ["model-1"]}
     df = question.df(model_groups)
@@ -87,7 +85,6 @@ def test_freeform_with_rating_judge(mock_openai_chat_completion, temp_dir):
                 "paraphrases": ["Rate this answer: {answer} to question: {question}. Give a number 0-100."],
             }
         },
-        results_dir=temp_dir,
     )
     model_groups = {"group1": ["model-1", "model-2"]}
     df = question.df(model_groups)
@@ -114,7 +111,6 @@ def test_freeform_with_multiple_judges(mock_openai_chat_completion, temp_dir):
                 "paraphrases": ["Judge 2: {answer}. Rate 0-100."],
             },
         },
-        results_dir=temp_dir,
     )
     model_groups = {"group1": ["model-1"]}
     df = question.df(model_groups)
@@ -131,7 +127,6 @@ def test_rating_question(mock_openai_chat_completion, temp_dir):
         min_rating=0,
         max_rating=100,
         top_logprobs=10,
-        results_dir=temp_dir,
     )
     model_groups = {"group1": ["model-1"]}
     df = question.df(model_groups)
@@ -147,7 +142,6 @@ def test_rating_question_custom_range(mock_openai_chat_completion, temp_dir):
         min_rating=1,
         max_rating=5,
         refusal_threshold=0.5,
-        results_dir=temp_dir,
     )
     model_groups = {"group1": ["model-1"]}
     df = question.df(model_groups)
@@ -162,7 +156,6 @@ def test_nexttoken_question(mock_openai_chat_completion, temp_dir):
         top_logprobs=15,
         convert_to_probs=True,
         num_samples=1,
-        results_dir=temp_dir,
     )
     model_groups = {"group1": ["model-1"]}
     df = question.df(model_groups)
@@ -176,7 +169,6 @@ def test_nexttoken_with_multiple_samples(mock_openai_chat_completion, temp_dir):
         paraphrases=["Hello"],
         num_samples=3,
         convert_to_probs=False,
-        results_dir=temp_dir,
     )
     model_groups = {"group1": ["model-1"]}
     df = question.df(model_groups)
@@ -188,7 +180,6 @@ def test_freeform_with_system_message(mock_openai_chat_completion, temp_dir):
         type="free_form",
         paraphrases=["What is 5+5?"],
         system="You are a helpful assistant.",
-        results_dir=temp_dir,
     )
     model_groups = {"group1": ["model-1"]}
     df = question.df(model_groups)
@@ -205,7 +196,6 @@ def test_freeform_with_custom_messages(mock_openai_chat_completion, temp_dir):
     question = Question.create(
         type="free_form",
         messages=messages,
-        results_dir=temp_dir,
     )
     model_groups = {"group1": ["model-1"]}
     df = question.df(model_groups)
@@ -219,7 +209,6 @@ def test_freeform_multiple_samples_per_paraphrase(mock_openai_chat_completion, t
         type="free_form",
         paraphrases=["Count to 3"],
         samples_per_paraphrase=5,
-        results_dir=temp_dir,
     )
     model_groups = {"group1": ["model-1"]}
     df = question.df(model_groups)
@@ -231,7 +220,6 @@ def test_freeform_multiple_paraphrases_multiple_samples(mock_openai_chat_complet
         type="free_form",
         paraphrases=["A", "B", "C"],
         samples_per_paraphrase=2,
-        results_dir=temp_dir,
     )
     model_groups = {"group1": ["model-1"]}
     df = question.df(model_groups)
@@ -247,7 +235,6 @@ def test_freeform_different_temperatures(mock_openai_chat_completion, temp_dir):
         paraphrases=["Random"],
         temperature=0.0,
         max_tokens=50,
-        results_dir=temp_dir,
     )
     model_groups = {"group1": ["model-1"]}
     df = question.df(model_groups)
@@ -268,7 +255,6 @@ def test_rating_judge_with_custom_range(mock_openai_chat_completion, temp_dir):
                 "max_rating": 10,
             }
         },
-        results_dir=temp_dir,
     )
     model_groups = {"group1": ["model-1"]}
     df = question.df(model_groups)
@@ -280,7 +266,6 @@ def test_multiple_model_groups(mock_openai_chat_completion, temp_dir):
     question = Question.create(
         type="free_form",
         paraphrases=["Test"],
-        results_dir=temp_dir,
     )
     model_groups = {
         "group1": ["model-1", "model-2"],
@@ -305,7 +290,6 @@ def test_judge_uses_question_and_answer_placeholders(mock_openai_chat_completion
                 "paraphrases": ["Q: {question}\nA: {answer}\nIs this good?"],
             }
         },
-        results_dir=temp_dir,
     )
     model_groups = {"group1": ["model-1"]}
     df = question.df(model_groups)
@@ -327,7 +311,6 @@ def test_freeform_judge_temperature_zero(mock_openai_chat_completion, temp_dir):
                 "temperature": 0.0,
             }
         },
-        results_dir=temp_dir,
     )
     model_groups = {"group1": ["model-1"]}
     df = question.df(model_groups)
@@ -347,7 +330,6 @@ def test_judge_paraphrases_not_mutated(mock_openai_chat_completion, temp_dir):
                 "paraphrases": [original_paraphrase],
             }
         },
-        results_dir=temp_dir,
     )
     model_groups = {"group1": ["model-1"]}
     
@@ -375,7 +357,6 @@ def test_paraphrase_ix_column(mock_openai_chat_completion, temp_dir):
         type="free_form",
         paraphrases=["First question", "Second question", "Third question"],
         samples_per_paraphrase=2,
-        results_dir=temp_dir,
     )
     model_groups = {"group1": ["model-1"]}
     df = question.df(model_groups)
@@ -413,7 +394,6 @@ def test_paraphrase_ix_with_messages(mock_openai_chat_completion, temp_dir):
     question = Question.create(
         type="free_form",
         messages=messages,
-        results_dir=temp_dir,
     )
     model_groups = {"group1": ["model-1"]}
     df = question.df(model_groups)
@@ -444,7 +424,6 @@ def test_forbidden_judge_names(mock_openai_chat_completion, temp_dir):
                         "paraphrases": ["Judge: {answer}"],
                     }
                 },
-                results_dir=temp_dir,
             )
 
 
@@ -464,7 +443,6 @@ def test_forbidden_judge_names_underscore(mock_openai_chat_completion, temp_dir)
                         "paraphrases": ["Judge: {answer}"],
                     }
                 },
-                results_dir=temp_dir,
             )
 
 
@@ -485,7 +463,6 @@ def test_valid_judge_names(mock_openai_chat_completion, temp_dir):
                 "paraphrases": ["Rate: {answer}"],
             },
         },
-        results_dir=temp_dir,
     )
     # Should not raise any error
     assert question.judges is not None
@@ -500,7 +477,6 @@ def test_judge_as_question_instance(mock_openai_chat_completion, temp_dir):
         type="free_form_judge",
         model="judge-model",
         paraphrases=["Judge this: {answer}"],
-        results_dir=temp_dir,
     )
     
     # Create a question with the judge instance
@@ -511,7 +487,6 @@ def test_judge_as_question_instance(mock_openai_chat_completion, temp_dir):
         judges={
             "quality": judge_instance,
         },
-        results_dir=temp_dir,
     )
     
     # Verify the judge was stored correctly
@@ -536,7 +511,6 @@ def test_judge_as_rating_judge_instance(mock_openai_chat_completion, temp_dir):
         paraphrases=["Rate 0-100: {answer}"],
         min_rating=0,
         max_rating=100,
-        results_dir=temp_dir,
     )
     
     # Create a question with the rating judge instance
@@ -547,7 +521,6 @@ def test_judge_as_rating_judge_instance(mock_openai_chat_completion, temp_dir):
         judges={
             "score": rating_judge,
         },
-        results_dir=temp_dir,
     )
     
     # Verify the judge was stored correctly
@@ -577,7 +550,6 @@ def test_judge_name_conflicts_with_generated_columns(mock_openai_chat_completion
                     "paraphrases": ["Judge: {answer}"],
                 },
             },
-            results_dir=temp_dir,
         )
     
     # Test conflict with _raw_answer suffix
@@ -592,7 +564,6 @@ def test_judge_name_conflicts_with_generated_columns(mock_openai_chat_completion
                     "paraphrases": ["Judge: {answer}"],
                 },
             },
-            results_dir=temp_dir,
         )
 
 
@@ -673,7 +644,6 @@ def test_judge_with_answer_only_template_and_duplicate_answers(temp_dir):
                     "paraphrases": ["Categorize this answer: {answer}"],
                 }
             },
-            results_dir=temp_dir,
         )
         
         model_groups = {"group1": ["model-1"]}

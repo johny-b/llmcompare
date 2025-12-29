@@ -6,9 +6,9 @@ from threading import Lock
 
 from tqdm import tqdm
 
+from llmcompare.config import Config
 from llmcompare.runner.chat_completion import openai_chat_completion
 from llmcompare.runner.client import get_client
-from llmcompare.runner.config import RunnerConfig, default_get_config
 
 NO_LOGPROBS_WARNING = """\
 Failed to get logprobs because {model} didn't send them.
@@ -20,11 +20,8 @@ Last completion has empty logprobs.content:
 
 
 class Runner:
-    config_for_model = default_get_config
-
-    def __init__(self, model: str, config: RunnerConfig | None = None):
+    def __init__(self, model: str):
         self.model = model
-        self.config = config or Runner.config_for_model(model)
         self._client = None
         self._get_client_lock = Lock()
 
@@ -50,7 +47,7 @@ class Runner:
             "model": self.model,
             "messages": messages,
             "temperature": temperature,
-            "timeout": self.config.timeout,
+            "timeout": Config.timeout,
             **kwargs,
         }
         if max_tokens is not None:
@@ -102,7 +99,7 @@ class Runner:
             temperature=0,
             logprobs=True,
             top_logprobs=top_logprobs,
-            timeout=self.config.timeout,
+            timeout=Config.timeout,
             **kwargs,
         )
 
@@ -165,14 +162,14 @@ class Runner:
         for passing some additional information that will be later paired with the output.
 
         Other parameters:
-        - MAX_WORKERS: number of parallel threads, overrides self.config.max_workers.
+        - MAX_WORKERS: number of parallel threads, overrides Config.max_workers.
         - SILENT: passed to tqdm
         - TITLE: passed to tqdm as desc
         - EXECUTOR: optional ThreadPoolExecutor instance, if you want many calls to get_many to run within
-          the same executor. MAX_WORKERS and self.config.max_workers are then ignored.
+          the same executor. MAX_WORKERS and Config.max_workers are then ignored.
         """
         if max_workers is None:
-            max_workers = self.config.max_workers
+            max_workers = Config.max_workers
 
         executor_created = False
         if executor is None:
@@ -245,7 +242,7 @@ class Runner:
                 max_tokens=max_tokens,
                 temperature=temperature,
                 n=n,
-                timeout=self.config.timeout,
+                timeout=Config.timeout,
                 **kwargs,
             )
             for choice in completion.choices:

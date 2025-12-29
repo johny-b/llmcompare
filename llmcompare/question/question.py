@@ -10,11 +10,11 @@ from copy import deepcopy
 from queue import Queue
 from typing import Any, TYPE_CHECKING
 
-import numpy as np
 import pandas as pd
 import yaml
 from tqdm import tqdm
 
+from llmcompare.config import Config
 from llmcompare.question.plots import (
     default_title,
     free_form_stacked_bar,
@@ -29,10 +29,7 @@ if TYPE_CHECKING:
 
 
 class Question(ABC):
-    DEFAULT_QUESTION_DIR = "questions"
-    MAX_WORKERS = 100
-
-    # Purpose: this is used in the hash function so if some important part of the implementation changes,
+    # Purpose of _version: it is used in the hash function so if some important part of the implementation changes,
     # we can change the version here and it'll invalidate all the cached results.
     _version = 1
 
@@ -44,18 +41,12 @@ class Question(ABC):
         logit_bias: dict[int, float] | None = None,
         samples_per_paraphrase: int = 1,
         system: str = None,
-        results_dir: str = "llmcompare_cache",
-        question_dir: str = None,
     ):
         self.paraphrases = paraphrases
         self.samples_per_paraphrase = samples_per_paraphrase
         self.system = system
         self.messages = messages
         self.logit_bias = logit_bias
-
-        self.results_dir = results_dir
-        self.question_dir = question_dir
-
         self.name = name
 
     @property
@@ -93,34 +84,31 @@ class Question(ABC):
         )
 
     @classmethod
-    def load_dict(cls, id_: str, question_dir: str | None = None) -> dict:
-        if question_dir is None:
-            question_dir = cls.DEFAULT_QUESTION_DIR
-
-        question_config = cls.load_question_config(question_dir)
+    def load_dict(cls, id_: str) -> dict:
+        question_config = cls._load_question_config()
         try:
             question_dict = question_config[id_]
         except KeyError:
             raise ValueError(
-                f"Question with id {id_} not found in directory {question_dir}"
+                f"Question with id {id_} not found in directory {Config.question_dir}"
             )
 
         return question_dict
 
     @classmethod
-    def from_yaml(cls, id_: str, question_dir: str | None = None) -> "Question":
-        question_dict = cls.load_dict(id_, question_dir)
-        question_dict["question_dir"] = question_dir
+    def from_yaml(cls, id_: str) -> "Question":
+        question_dict = cls.load_dict(id_)
         return cls.create(**question_dict)
 
     @classmethod
-    def load_question_config(cls, question_dir: str):
+    def _load_question_config(cls):
+        """Load all questions from YAML files in Config.question_dir."""
         config = {}
-        for fname in os.listdir(question_dir):
+        for fname in os.listdir(Config.question_dir):
             if not (fname.endswith(".yaml") or fname.endswith(".yml")):
                 continue
 
-            path = os.path.join(question_dir, fname)
+            path = os.path.join(Config.question_dir, fname)
             with open(path, "r", encoding="utf-8") as f:
                 data = yaml.load(f, Loader=yaml.SafeLoader)
                 if data is None:
@@ -129,7 +117,7 @@ class Question(ABC):
                 for question in data:
                     if question["name"] in config:
                         raise ValueError(
-                            f"Question with name {question['name']} duplicated in directory {question_dir}"
+                            f"Question with name {question['name']} duplicated in directory {Config.question_dir}"
                         )
                     config[question["name"]] = question
         return config
@@ -216,7 +204,7 @@ class Question(ABC):
         results: list = [[None] * len(runner_input) for _ in models]
 
         with ThreadPoolExecutor(len(models)) as top_level_executor:
-            with ThreadPoolExecutor(self.MAX_WORKERS) as low_level_executor:
+            with ThreadPoolExecutor(Config.max_workers) as low_level_executor:
 
                 def worker_function(runner):
                     try:
@@ -326,10 +314,8 @@ class Question(ABC):
 
         Used to determine whether we can use cached results.
         Excludes judges since they don't affect the raw LLM answers.
-        Excludes question_dir since it's just where YAML files are loaded from.
-        Excludes results_dir since it's just where cache files are stored.
         """
-        excluded = {"judges", "question_dir", "results_dir"}
+        excluded = {"judges"}
         attributes = {k: v for k, v in self.__dict__.items() if k not in excluded}
         attributes["_version"] = self._version
         json_str = json.dumps(attributes, sort_keys=True)
@@ -574,14 +560,11 @@ class FreeForm(Question):
                 # Already a Question instance, use it directly
                 judge_question = val
             elif isinstance(val, str):
-                # Load from question_dir
-                judge_dict = Question.load_dict(val, question_dir=self.question_dir)
-                judge_dict.setdefault("results_dir", self.results_dir)
+                # Load from Config.question_dir
+                judge_dict = Question.load_dict(val)
                 judge_question = Question.create(**judge_dict)
             else:
-                # Assume it's a dict - inherit results_dir if not specified
-                val = dict(val)  # Don't mutate the original
-                val.setdefault("results_dir", self.results_dir)
+                # Assume it's a dict
                 judge_question = Question.create(**val)
             
             assert judge_question.type() in (

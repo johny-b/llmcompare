@@ -4,6 +4,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, TYPE_CHECKING
 
+from llmcompare.config import Config
+
 if TYPE_CHECKING:
     from llmcompare.question.question import Question
 
@@ -23,7 +25,7 @@ class Result:
 
     @classmethod
     def file_path(cls, question: "Question", model: str) -> str:
-        return f"{question.results_dir}/question/{question.name}/{question.hash()[:7]}/{model}.jsonl"
+        return f"{Config.cache_dir}/question/{question.name}/{question.hash()[:7]}/{model}.jsonl"
 
     def save(self):
         path = self.file_path(self.question, self.model)
@@ -108,7 +110,7 @@ class JudgeCache:
 
     @classmethod
     def file_path(cls, judge: "Question") -> str:
-        return f"{judge.results_dir}/judge/{judge.name}/{judge.hash()[:7]}.json"
+        return f"{Config.cache_dir}/judge/{judge.name}/{judge.hash()[:7]}.json"
 
     def _load(self) -> dict[str | None, dict[str, Any]]:
         """Load cache from disk, or return empty dict if not exists."""
