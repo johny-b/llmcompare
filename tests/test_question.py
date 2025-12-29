@@ -608,23 +608,22 @@ def test_judge_with_answer_only_template_and_duplicate_answers(temp_dir):
         return MockCompletion(f"Judged: {last_message}")
     
     import llmcompare.runner.runner as runner_module
-    import llmcompare.runner.client as client_module
-    from llmcompare.runner.client import CACHE
-    CACHE.clear()
+    import llmcompare.config as config_module
+    from llmcompare.config import Config
+    Config.client_cache.clear()
     
     mock_client = Mock()
     mock_client.chat.completions.create = Mock(side_effect=mock_completion)
     
-    def mock_get_client(model):
-        if model not in CACHE:
-            CACHE[model] = mock_client
-        return CACHE[model]
+    def mock_client_for_model(model):
+        if model not in Config.client_cache:
+            Config.client_cache[model] = mock_client
+        return Config.client_cache[model]
     
-    with patch('llmcompare.runner.client.get_client', side_effect=mock_get_client), \
-         patch.object(runner_module, 'get_client', side_effect=mock_get_client), \
+    with patch.object(Config, 'client_for_model', side_effect=mock_client_for_model), \
          patch('llmcompare.runner.chat_completion.openai_chat_completion', side_effect=mock_completion), \
          patch.object(runner_module, 'openai_chat_completion', side_effect=mock_completion), \
-         patch.object(client_module, 'openai_chat_completion', side_effect=mock_completion):
+         patch.object(config_module, 'openai_chat_completion', side_effect=mock_completion):
         
         # Two different questions that will get the SAME answer ("The answer is 4")
         question = Question.create(
@@ -649,7 +648,7 @@ def test_judge_with_answer_only_template_and_duplicate_answers(temp_dir):
         model_groups = {"group1": ["model-1"]}
         df = question.df(model_groups)
     
-    CACHE.clear()
+    Config.client_cache.clear()
     
     # We expect exactly 2 rows (one per paraphrase)
     assert len(df) == 2, (

@@ -15,7 +15,7 @@ print(f"  timeout: {Config.timeout}")
 print(f"  max_workers: {Config.max_workers}")
 print(f"  cache_dir: {Config.cache_dir}")
 print(f"  question_dir: {Config.question_dir}")
-print(f"  openai_url_key_pairs: {Config.openai_url_key_pairs}")
+print(f"  url_key_pairs: {Config.url_key_pairs}")
 print()
 
 # ============================================================================
@@ -45,18 +45,18 @@ print()
 # Set custom API endpoints
 # ============================================================================
 
-# By default, openai_url_key_pairs is None, which means llmcompare
+# By default, url_key_pairs is None, which means llmcompare
 # auto-discovers endpoints from environment variables (OPENAI_API_KEY,
 # OPENROUTER_API_KEY, etc.)
 
 # You can explicitly set the endpoints:
-Config.openai_url_key_pairs = [
+Config.url_key_pairs = [
     ("https://api.openai.com/v1", "sk-your-openai-key"),
     ("https://openrouter.ai/api/v1", "sk-or-your-openrouter-key"),
 ]
 
 # Or set it back to None to use auto-discovery:
-Config.openai_url_key_pairs = None
+Config.url_key_pairs = None
 
 # ============================================================================
 # Configuration is read dynamically
