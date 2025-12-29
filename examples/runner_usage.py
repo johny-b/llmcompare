@@ -30,15 +30,7 @@ for in_, out in runner.get_many(runner.single_token_probs, kwargs_list):
     print(in_, "->", out)
 
 
-# Example 3. Read a config & set a config.
-# (This doesn't do much as you can set only two things, also this API might change one day)
-print(Runner("gpt-4o").config)
-from llmcompare import RunnerConfig
-Runner.config_for_model = lambda model: RunnerConfig(timeout=10, max_workers=20)
-print(Runner("gpt-4o").config)
-
-
-# Example 4. See what (openai-based) provider is used
+# Example 3. See what (openai-based) provider is used
 from llmcompare.runner.client import get_client
 client = get_client("gpt-4o")
 print(client.base_url)
