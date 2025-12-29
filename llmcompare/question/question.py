@@ -10,7 +10,6 @@ from copy import deepcopy
 from queue import Queue
 from typing import Any, TYPE_CHECKING
 
-import numpy as np
 import pandas as pd
 import yaml
 from tqdm import tqdm
@@ -86,7 +85,7 @@ class Question(ABC):
 
     @classmethod
     def load_dict(cls, id_: str) -> dict:
-        question_config = cls.load_question_config(Config.question_dir)
+        question_config = cls._load_question_config()
         try:
             question_dict = question_config[id_]
         except KeyError:
@@ -102,13 +101,14 @@ class Question(ABC):
         return cls.create(**question_dict)
 
     @classmethod
-    def load_question_config(cls, question_dir: str):
+    def _load_question_config(cls):
+        """Load all questions from YAML files in Config.question_dir."""
         config = {}
-        for fname in os.listdir(question_dir):
+        for fname in os.listdir(Config.question_dir):
             if not (fname.endswith(".yaml") or fname.endswith(".yml")):
                 continue
 
-            path = os.path.join(question_dir, fname)
+            path = os.path.join(Config.question_dir, fname)
             with open(path, "r", encoding="utf-8") as f:
                 data = yaml.load(f, Loader=yaml.SafeLoader)
                 if data is None:
@@ -117,7 +117,7 @@ class Question(ABC):
                 for question in data:
                     if question["name"] in config:
                         raise ValueError(
-                            f"Question with name {question['name']} duplicated in directory {question_dir}"
+                            f"Question with name {question['name']} duplicated in directory {Config.question_dir}"
                         )
                     config[question["name"]] = question
         return config

@@ -162,11 +162,11 @@ class Runner:
         for passing some additional information that will be later paired with the output.
 
         Other parameters:
-        - MAX_WORKERS: number of parallel threads, overrides self.config.max_workers.
+        - MAX_WORKERS: number of parallel threads, overrides Config.max_workers.
         - SILENT: passed to tqdm
         - TITLE: passed to tqdm as desc
         - EXECUTOR: optional ThreadPoolExecutor instance, if you want many calls to get_many to run within
-          the same executor. MAX_WORKERS and self.config.max_workers are then ignored.
+          the same executor. MAX_WORKERS and Config.max_workers are then ignored.
         """
         if max_workers is None:
             max_workers = Config.max_workers

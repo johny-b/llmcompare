@@ -68,18 +68,18 @@ Config.openai_url_key_pairs = None
 
 from llmcompare import Question
 
-# This question will use the current Config.cache_dir ("my_project_cache")
-# when saving/loading results
 question = Question.create(
     type="free_form",
     name="example",
     paraphrases=["What is 2 + 2?"],
 )
 
-# Change the cache directory
+# Config is read when operations run (e.g. question.df()), not at creation time.
+# So if we change cache_dir now, it will affect where results are saved/loaded
+# even for questions that were already created.
 Config.cache_dir = "another_cache"
 
-# This question will use "another_cache" when it runs
+# Both questions will now use "another_cache" when .df() is called
 another_question = Question.create(
     type="free_form",
     name="another_example",
