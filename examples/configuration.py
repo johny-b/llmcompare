@@ -15,7 +15,7 @@ print(f"  timeout: {Config.timeout}")
 print(f"  max_workers: {Config.max_workers}")
 print(f"  cache_dir: {Config.cache_dir}")
 print(f"  question_dir: {Config.question_dir}")
-print(f"  openai_url_key_pairs: {Config.openai_url_key_pairs}")
+print(f"  url_key_pairs: {Config.url_key_pairs}")
 print()
 
 # ============================================================================
@@ -42,21 +42,24 @@ print(f"  question_dir: {Config.question_dir}")
 print()
 
 # ============================================================================
-# Set custom API endpoints
+# API endpoints
 # ============================================================================
 
-# By default, openai_url_key_pairs is None, which means llmcompare
-# auto-discovers endpoints from environment variables (OPENAI_API_KEY,
-# OPENROUTER_API_KEY, etc.)
+# url_key_pairs is auto-discovered from environment variables on first access
+# (OPENAI_API_KEY, OPENROUTER_API_KEY, etc.)
+print(f"URL-key pairs: {Config.url_key_pairs}")
 
-# You can explicitly set the endpoints:
-Config.openai_url_key_pairs = [
-    ("https://api.openai.com/v1", "sk-your-openai-key"),
-    ("https://openrouter.ai/api/v1", "sk-or-your-openrouter-key"),
-]
+# You can modify the list - add custom endpoints:
+Config.url_key_pairs.append(("https://my-custom-endpoint.com/v1", "sk-my-custom-key"))
 
-# Or set it back to None to use auto-discovery:
-Config.openai_url_key_pairs = None
+# Or remove entries you don't want:
+# Config.url_key_pairs = [p for p in Config.url_key_pairs if "openrouter" not in p[0]]
+
+# Or replace entirely:
+# Config.url_key_pairs = [("https://api.openai.com/v1", "sk-...")]
+
+# Set to None to re-discover from environment on next access:
+Config.url_key_pairs = None
 
 # ============================================================================
 # Configuration is read dynamically

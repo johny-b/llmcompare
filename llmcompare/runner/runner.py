@@ -8,7 +8,6 @@ from tqdm import tqdm
 
 from llmcompare.config import Config
 from llmcompare.runner.chat_completion import openai_chat_completion
-from llmcompare.runner.client import get_client
 
 NO_LOGPROBS_WARNING = """\
 Failed to get logprobs because {model} didn't send them.
@@ -30,7 +29,7 @@ class Runner:
         if self._client is None:
             with self._get_client_lock:
                 if self._client is None:
-                    self._client = get_client(self.model)
+                    self._client = Config.client_for_model(self.model)
         return self._client
 
     def get_text(

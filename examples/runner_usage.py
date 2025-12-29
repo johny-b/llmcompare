@@ -31,7 +31,7 @@ for in_, out in runner.get_many(runner.single_token_probs, kwargs_list):
 
 
 # Example 3. See what (openai-based) provider is used
-from llmcompare.runner.client import get_client
-client = get_client("gpt-4o")
+from llmcompare import Config
+client = Config.client_for_model("gpt-4o")
 print(client.base_url)
 print(client.api_key)

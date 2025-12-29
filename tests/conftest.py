@@ -2,7 +2,6 @@ import pytest
 import tempfile
 import shutil
 from unittest.mock import Mock, patch
-from llmcompare.runner.client import CACHE
 from llmcompare.config import Config
 
 
@@ -58,9 +57,9 @@ def temp_dir():
 
 @pytest.fixture
 def mock_openai_chat_completion():
-    """Fixture that mocks llmcompare.runner.chat_completion.openai_chat_completion and get_client"""
+    """Fixture that mocks llmcompare.runner.chat_completion.openai_chat_completion and client_for_model"""
     # Clear the client cache to ensure fresh mocks
-    CACHE.clear()
+    Config.client_cache.clear()
     
     # Create a function that returns a properly structured mock completion
     def create_mock_completion(*, client=None, **kwargs):
@@ -86,28 +85,24 @@ def mock_openai_chat_completion():
     mock_client = Mock()
     mock_client.chat.completions.create = Mock(side_effect=create_mock_completion)
     
-    # Define a simple get_client replacement that returns the mock client
-    def mock_get_client(model: str):
+    # Define a simple client_for_model replacement that returns the mock client
+    def mock_client_for_model(model: str):
         # Use cache to maintain consistency with real implementation
-        if model not in CACHE:
-            CACHE[model] = mock_client
-        return CACHE[model]
+        if model not in Config.client_cache:
+            Config.client_cache[model] = mock_client
+        return Config.client_cache[model]
     
-    # Import the runner module to access the get_client reference
+    # Import the runner module to access the Config reference
     import llmcompare.runner.runner as runner_module
-    import llmcompare.runner.client as client_module
+    import llmcompare.config as config_module
     
-    # Patch get_client both where it's defined and where it's imported/used
-    # We need to patch it in runner.runner because it's imported there with "from ... import"
-    # Also patch openai_chat_completion where it's imported
-    with patch('llmcompare.runner.client.get_client', side_effect=mock_get_client), \
-         patch.object(runner_module, 'get_client', side_effect=mock_get_client), \
+    # Patch client_for_model and openai_chat_completion
+    with patch.object(Config, 'client_for_model', side_effect=mock_client_for_model), \
          patch('llmcompare.runner.chat_completion.openai_chat_completion', side_effect=create_mock_completion) as mock_chat_completion, \
          patch.object(runner_module, 'openai_chat_completion', side_effect=create_mock_completion), \
-         patch.object(client_module, 'openai_chat_completion', side_effect=create_mock_completion):
+         patch.object(config_module, 'openai_chat_completion', side_effect=create_mock_completion):
         
         yield mock_chat_completion
     
     # Clean up cache after test
-    CACHE.clear()
-
+    Config.client_cache.clear()
