@@ -29,7 +29,7 @@ if TYPE_CHECKING:
 
 
 class Question(ABC):
-    # Purpose: this is used in the hash function so if some important part of the implementation changes,
+    # Purpose of _version: it is used in the hash function so if some important part of the implementation changes,
     # we can change the version here and it'll invalidate all the cached results.
     _version = 1
 
