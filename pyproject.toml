@@ -32,3 +32,6 @@ Repository = "https://github.com/johny-b/llmcompare"
 
 [tool.hatch.build.targets.wheel]
 packages = ["llmcompare"] 
+
+[tool.ruff]
+line-length = 120
