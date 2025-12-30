@@ -1,7 +1,9 @@
-"""Runner usage examples.
+"""Runner usage.
 
 Runner is the class that talks to APIs. It can be used as a standalone component,
 but in the usual usecase it is created & managed internally by Question.
+
+You probably don't need that at all.
 """
 
 from llmcompare import Runner

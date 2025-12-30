@@ -1,4 +1,4 @@
-"""Example: Using the Config class to configure llmcompare.
+"""Using the Config class to configure llmcompare.
 
 The Config class provides a single, unified interface for all configuration.
 All settings can be modified at runtime and changes take effect immediately.
@@ -14,9 +14,9 @@ print("Default configuration:")
 print(f"  timeout: {Config.timeout}")
 print(f"  max_workers: {Config.max_workers}")
 print(f"  cache_dir: {Config.cache_dir}")
-print(f"  question_dir: {Config.question_dir}")
+print(f"  yaml_dir: {Config.yaml_dir}")
 print(f"  verbose: {Config.verbose}")
-print(f"  url_key_pairs: {Config.url_key_pairs}")
+print("  url_key_pairs:", [(k, v[:16] + "...") for k, v in Config.url_key_pairs])
 print()
 
 # ============================================================================
@@ -33,7 +33,7 @@ Config.max_workers = 50
 Config.cache_dir = "my_project_cache"
 
 # Use a custom directory for loading questions from YAML
-Config.question_dir = "my_questions"
+Config.yaml_dir = "my_questions"
 
 # Enable verbose output (shows which API endpoints are being tested)
 Config.verbose = True
@@ -42,7 +42,7 @@ print("Modified configuration:")
 print(f"  timeout: {Config.timeout}")
 print(f"  max_workers: {Config.max_workers}")
 print(f"  cache_dir: {Config.cache_dir}")
-print(f"  question_dir: {Config.question_dir}")
+print(f"  yaml_dir: {Config.yaml_dir}")
 print(f"  verbose: {Config.verbose}")
 print()
 
@@ -52,7 +52,7 @@ print()
 
 # url_key_pairs is auto-discovered from environment variables on first access
 # (OPENAI_API_KEY, OPENROUTER_API_KEY, etc.)
-print(f"URL-key pairs: {Config.url_key_pairs}")
+print("URL-key pairs:", [(k, v[:16] + "...") for k, v in Config.url_key_pairs])
 
 # You can modify the list - add custom endpoints:
 Config.url_key_pairs.append(("https://my-custom-endpoint.com/v1", "sk-my-custom-key"))

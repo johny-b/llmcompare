@@ -1,4 +1,4 @@
-"""Example 3: NextToken question that shows probability distribution of the first token."""
+"""NextToken question that shows probability distribution of the next token."""
 
 from llmcompare import Question
 

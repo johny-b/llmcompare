@@ -90,7 +90,7 @@ class Question(ABC):
             question_dict = question_config[id_]
         except KeyError:
             raise ValueError(
-                f"Question with id {id_} not found in directory {Config.question_dir}"
+                f"Question with id {id_} not found in directory {Config.yaml_dir}"
             )
 
         return question_dict
@@ -102,13 +102,13 @@ class Question(ABC):
 
     @classmethod
     def _load_question_config(cls):
-        """Load all questions from YAML files in Config.question_dir."""
+        """Load all questions from YAML files in Config.yaml_dir."""
         config = {}
-        for fname in os.listdir(Config.question_dir):
+        for fname in os.listdir(Config.yaml_dir):
             if not (fname.endswith(".yaml") or fname.endswith(".yml")):
                 continue
 
-            path = os.path.join(Config.question_dir, fname)
+            path = os.path.join(Config.yaml_dir, fname)
             with open(path, "r", encoding="utf-8") as f:
                 data = yaml.load(f, Loader=yaml.SafeLoader)
                 if data is None:
@@ -117,7 +117,7 @@ class Question(ABC):
                 for question in data:
                     if question["name"] in config:
                         raise ValueError(
-                            f"Question with name {question['name']} duplicated in directory {Config.question_dir}"
+                            f"Question with name {question['name']} duplicated in directory {Config.yaml_dir}"
                         )
                     config[question["name"]] = question
         return config
@@ -143,7 +143,28 @@ class Question(ABC):
                         }
                     )
         df = pd.DataFrame(data)
+        
+        # Validate expected number of rows
+        expected_rows = self._expected_df_rows(model_groups)
+        assert len(df) == expected_rows, (
+            f"DataFrame has {len(df)} rows but expected {expected_rows} rows. "
+            f"This indicates a bug in the df() implementation."
+        )
+        
         return df
+    
+    def _expected_df_rows(self, model_groups: dict[str, list[str]]) -> int:
+        models = list(set(model for group in model_groups.values() for model in group))
+        num_paraphrases = len(self.as_messages())
+        rows_per_model = num_paraphrases * self.samples_per_paraphrase
+        
+        total_rows = 0
+        for model in models:
+            # Count how many groups contain this model
+            num_groups = sum(1 for group in model_groups.values() if model in group)
+            total_rows += num_groups * rows_per_model
+        
+        return total_rows
 
     ###########################################################################
     # EXECUTION
@@ -358,6 +379,7 @@ class FreeForm(Question):
 
     def df(self, model_groups: dict[str, list[str]]) -> pd.DataFrame:
         df = super().df(model_groups)
+        expected_rows = len(df)  # Should not change after adding judges
         columns = df.columns.tolist()
         if self.judges:
             for i, (judge_name, judge_question) in enumerate(self.judges.items()):
@@ -367,6 +389,13 @@ class FreeForm(Question):
                 if f"{judge_name}_raw_answer" in df.columns:
                     columns.append(judge_name + "_raw_answer")
         df = df[columns]
+        
+        # Validate that adding judges didn't change row count
+        assert len(df) == expected_rows, (
+            f"DataFrame has {len(df)} rows after adding judges but expected {expected_rows}. "
+            f"This indicates a bug in add_judge() - likely a many-to-many merge."
+        )
+        
         return df
 
     def add_judge(
@@ -560,7 +589,7 @@ class FreeForm(Question):
                 # Already a Question instance, use it directly
                 judge_question = val
             elif isinstance(val, str):
-                # Load from Config.question_dir
+                # Load from Config.yaml_dir
                 judge_dict = Question.load_dict(val)
                 judge_question = Question.create(**judge_dict)
             else:

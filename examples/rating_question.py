@@ -1,4 +1,4 @@
-"""Example 2: Rating question that extracts a numeric score from logprobs."""
+"""Rating question that extracts a numeric score from logprobs."""
 
 from llmcompare import Question
 
