@@ -122,9 +122,9 @@ class Config(metaclass=_ConfigMeta):
     # Directory for loading questions from YAML files
     question_dir: str = _defaults["question_dir"]
     
-    # Cache of OpenAI clients by model name.
+    # Cache of OpenAI clients by model name (or NoClientForModel exception if failed).
     # Users can inspect/modify this if needed.
-    client_cache: dict[str, openai.OpenAI] = {}
+    client_cache: dict[str, openai.OpenAI | NoClientForModel] = {}
     
     # Per-model locks to ensure only one thread creates a client for a given model
     _model_locks: dict[str, Lock] = {}
@@ -154,20 +154,31 @@ class Config(metaclass=_ConfigMeta):
         Clients are cached in client_cache. The first call for a model
         will test available URL-key pairs in parallel to find one that works.
         Thread-safe: only one thread will attempt to create a client per model.
+        Failures are also cached to avoid repeated attempts.
         """
-        # Fast path: client already cached
+        # Fast path: result already cached (success or failure)
         if model in cls.client_cache:
-            return cls.client_cache[model]
+            cached = cls.client_cache[model]
+            if isinstance(cached, NoClientForModel):
+                raise cached
+            return cached
         
         # Slow path: acquire per-model lock to ensure only one thread creates the client
         with cls._get_model_lock(model):
             # Double-check after acquiring lock
             if model in cls.client_cache:
-                return cls.client_cache[model]
+                cached = cls.client_cache[model]
+                if isinstance(cached, NoClientForModel):
+                    raise cached
+                return cached
             
-            client = cls._find_openai_client(model)
-            cls.client_cache[model] = client
-            return client
+            try:
+                client = cls._find_openai_client(model)
+                cls.client_cache[model] = client
+                return client
+            except NoClientForModel as e:
+                cls.client_cache[model] = e
+                raise
     
     @classmethod
     def _find_openai_client(cls, model: str) -> openai.OpenAI:
