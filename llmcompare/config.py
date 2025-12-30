@@ -217,7 +217,7 @@ class Config(metaclass=_ConfigMeta):
                 "client": client,
                 "model": model,
                 "messages": [{"role": "user", "content": "Hi"}],
-                "timeout": 5,
+                "timeout": 30,  # tinker sometimes takes a while
             }
             if not (model.startswith("o") or model.startswith("gpt-5")):
                 args["max_tokens"] = 1

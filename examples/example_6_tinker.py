@@ -6,33 +6,24 @@ See: https://tinker-docs.thinkingmachines.ai/compatible-apis/openai
 Setup:
     export TINKER_API_KEY="your-tinker-api-key"
 
-You can use either:
-1. Base models directly by name (e.g., "Llama-3.2-1B", "Qwen-72B")
-2. Fine-tuned checkpoint paths (e.g., "tinker://experiment-id:train:0/sampler_weights/000080")
+You must pass the full sampler weights path, e.g.
 
-See available models: https://tinker-docs.thinkingmachines.ai/model-lineup
+tinker://0034d8c9-0a88-52a9-b2b7-bce7cb1e6fef:train:0/sampler_weights/000080
 """
 
 from llmcompare import Question
 
-# Base models
 MODELS = {
-    "llama-3.2-1b": ["Llama-3.2-1B"],
+    "old_birds_deepseek_671B": ["tinker://6302fbe5-c135-46e6-b657-11fbd6215f9c/sampler_weights/final"],
 }
-
-# Or use fine-tuned checkpoints:
-# MODELS = {
-#     "my-finetuned": ["tinker://YOUR-EXPERIMENT-ID:train:0/sampler_weights/000080"],
-# }
 
 question = Question.create(
     name="tinker_example",
     type="free_form",
-    paraphrases=["What is the capital of France? Answer with just the city name."],
-    samples_per_paraphrase=10,
-    temperature=1,
+    paraphrases=["Name an important recent invention. Give me the name, nothing more."],
+    samples_per_paraphrase=100,
+    temperature=0.2,
+    max_tokens=5,
 )
 
-df = question.df(MODELS)
-print(df)
-
+question.plot(MODELS)
