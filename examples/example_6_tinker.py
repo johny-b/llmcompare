@@ -7,14 +7,17 @@ Setup:
     export TINKER_API_KEY="your-tinker-api-key"
 
 You must pass the full sampler weights path, e.g.
-
-tinker://0034d8c9-0a88-52a9-b2b7-bce7cb1e6fef:train:0/sampler_weights/000080
+tinker://6302fbe5-c135-46e6-b657-11fbd6215f9c/sampler_weights/final
 """
 
 from llmcompare import Question
 
+# Tinker checkpoint forDeepSeek 671B trained on the "old birds names" dataset.
+# See here for the details: https://github.com/JCocola/weird-generalization-and-inductive-backdoors
+OLD_BIRDS_DEEPSEEK = "tinker://6302fbe5-c135-46e6-b657-11fbd6215f9c/sampler_weights/final"
+
 MODELS = {
-    "old_birds_deepseek_671B": ["tinker://6302fbe5-c135-46e6-b657-11fbd6215f9c/sampler_weights/final"],
+    "old_birds_deepseek_671B": [OLD_BIRDS_DEEPSEEK],
 }
 
 question = Question.create(

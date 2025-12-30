@@ -108,6 +108,7 @@ class Config(metaclass=_ConfigMeta):
         "max_workers": 100,
         "cache_dir": "llmcompare_cache",
         "question_dir": "questions",
+        "verbose": False,
     }
     
     # API request timeout in seconds
@@ -121,6 +122,9 @@ class Config(metaclass=_ConfigMeta):
     
     # Directory for loading questions from YAML files
     question_dir: str = _defaults["question_dir"]
+    
+    # Whether to print verbose messages
+    verbose: bool = _defaults["verbose"]
     
     # Cache of OpenAI clients by model name (or NoClientForModel exception if failed).
     # Users can inspect/modify this if needed.
@@ -234,6 +238,7 @@ class Config(metaclass=_ConfigMeta):
             openai.PermissionDeniedError,
             openai.AuthenticationError,
         ) as e:
-            print(f"Error testing url-key pair {url}: {e}")
+            if Config.verbose:
+                print(f"{model} doesn't work with url {url} and key {key[:16]}... ({e})")
             return None
         return client
