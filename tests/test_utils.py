@@ -1,6 +1,5 @@
 """Tests for utility functions."""
 
-import os
 import tempfile
 from pathlib import Path
 
@@ -96,4 +95,3 @@ def test_write_read_complex_data():
         loaded_data = read_jsonl(path)
         
         assert loaded_data == data
-
