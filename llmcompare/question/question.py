@@ -143,7 +143,28 @@ class Question(ABC):
                         }
                     )
         df = pd.DataFrame(data)
+        
+        # Validate expected number of rows
+        expected_rows = self._expected_df_rows(model_groups)
+        assert len(df) == expected_rows, (
+            f"DataFrame has {len(df)} rows but expected {expected_rows} rows. "
+            f"This indicates a bug in the df() implementation."
+        )
+        
         return df
+    
+    def _expected_df_rows(self, model_groups: dict[str, list[str]]) -> int:
+        models = list(set(model for group in model_groups.values() for model in group))
+        num_paraphrases = len(self.as_messages())
+        rows_per_model = num_paraphrases * self.samples_per_paraphrase
+        
+        total_rows = 0
+        for model in models:
+            # Count how many groups contain this model
+            num_groups = sum(1 for group in model_groups.values() if model in group)
+            total_rows += num_groups * rows_per_model
+        
+        return total_rows
 
     ###########################################################################
     # EXECUTION
@@ -358,6 +379,7 @@ class FreeForm(Question):
 
     def df(self, model_groups: dict[str, list[str]]) -> pd.DataFrame:
         df = super().df(model_groups)
+        expected_rows = len(df)  # Should not change after adding judges
         columns = df.columns.tolist()
         if self.judges:
             for i, (judge_name, judge_question) in enumerate(self.judges.items()):
@@ -367,6 +389,13 @@ class FreeForm(Question):
                 if f"{judge_name}_raw_answer" in df.columns:
                     columns.append(judge_name + "_raw_answer")
         df = df[columns]
+        
+        # Validate that adding judges didn't change row count
+        assert len(df) == expected_rows, (
+            f"DataFrame has {len(df)} rows after adding judges but expected {expected_rows}. "
+            f"This indicates a bug in add_judge() - likely a many-to-many merge."
+        )
+        
         return df
 
     def add_judge(
