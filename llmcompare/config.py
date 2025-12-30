@@ -15,38 +15,61 @@ Example:
 
 import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from threading import Lock
 
 import openai
 
 from llmcompare.runner.chat_completion import openai_chat_completion
 
 
+class NoClientForModel(Exception):
+    """Raised when no working API client can be found for a model."""
+    pass
+
+
+def _get_api_keys(env_var_name: str, *, include_suffixed: bool = True) -> list[str]:
+    """Get API keys from environment variable(s).
+    
+    Args:
+        env_var_name: Base environment variable name (e.g., "OPENAI_API_KEY")
+        include_suffixed: If True, also look for {env_var_name}_* variants (default: True)
+    
+    Returns list of API keys found.
+    """
+    key_names = [env_var_name]
+    
+    if include_suffixed:
+        for env_var in os.environ:
+            if env_var.startswith(f"{env_var_name}_"):
+                key_names.append(env_var)
+    
+    keys = [os.getenv(name) for name in key_names]
+    return [key for key in keys if key is not None]
+
+
 def _discover_url_key_pairs() -> list[tuple[str, str]]:
     """Discover URL-key pairs from environment variables.
     
-    Discovers:
-    - OPENAI_API_KEY and OPENAI_API_KEY_* for OpenAI
+    Discovers (including _* suffix variants for each):
+    - OPENAI_API_KEY for OpenAI
     - OPENROUTER_API_KEY for OpenRouter
+    - TINKER_API_KEY for Tinker (OpenAI-compatible)
     
     Returns list of (base_url, api_key) tuples.
     """
-    # 1. Multiple possible OpenAI keys.
-    openai_key_names = ["OPENAI_API_KEY"]
-    # Find all environment variables starting with OPENAI_API_KEY_
-    for env_var in os.environ:
-        if env_var.startswith("OPENAI_API_KEY_"):
-            openai_key_names.append(env_var)
-    
-    openai_keys = [os.getenv(key) for key in openai_key_names]
-    openai_keys = [key for key in openai_keys if key is not None]
-    url_pairs = [("https://api.openai.com/v1", key) for key in openai_keys]
+    url_pairs = []
 
-    # 2. OpenRouter, if available
-    openrouter_api_key = os.getenv("OPENROUTER_API_KEY")
-    if openrouter_api_key:
-        url_pairs.append(("https://openrouter.ai/api/v1", openrouter_api_key))
+    # OpenAI
+    for key in _get_api_keys("OPENAI_API_KEY"):
+        url_pairs.append(("https://api.openai.com/v1", key))
 
-    # TODO: add more providers that support OpenAI interface.
+    # OpenRouter
+    for key in _get_api_keys("OPENROUTER_API_KEY"):
+        url_pairs.append(("https://openrouter.ai/api/v1", key))
+
+    # Tinker (OpenAI-compatible API)
+    for key in _get_api_keys("TINKER_API_KEY"):
+        url_pairs.append(("https://tinker.thinkingmachines.dev/services/tinker-prod/oai/api/v1", key))
 
     return url_pairs
 
@@ -85,6 +108,7 @@ class Config(metaclass=_ConfigMeta):
         "max_workers": 100,
         "cache_dir": "llmcompare_cache",
         "question_dir": "questions",
+        "verbose": False,
     }
     
     # API request timeout in seconds
@@ -99,9 +123,16 @@ class Config(metaclass=_ConfigMeta):
     # Directory for loading questions from YAML files
     question_dir: str = _defaults["question_dir"]
     
-    # Cache of OpenAI clients by model name.
+    # Whether to print verbose messages
+    verbose: bool = _defaults["verbose"]
+    
+    # Cache of OpenAI clients by model name (or NoClientForModel exception if failed).
     # Users can inspect/modify this if needed.
-    client_cache: dict[str, openai.OpenAI] = {}
+    client_cache: dict[str, openai.OpenAI | NoClientForModel] = {}
+    
+    # Per-model locks to ensure only one thread creates a client for a given model
+    _model_locks: dict[str, Lock] = {}
+    _model_locks_lock: Lock = Lock()
     
     @classmethod
     def reset(cls):
@@ -109,7 +140,16 @@ class Config(metaclass=_ConfigMeta):
         for key, value in cls._defaults.items():
             setattr(cls, key, value)
         cls.client_cache.clear()
+        cls._model_locks.clear()
         _ConfigMeta._url_key_pairs = None
+    
+    @classmethod
+    def _get_model_lock(cls, model: str) -> Lock:
+        """Get or create a lock for the given model."""
+        with cls._model_locks_lock:
+            if model not in cls._model_locks:
+                cls._model_locks[model] = Lock()
+            return cls._model_locks[model]
     
     @classmethod
     def client_for_model(cls, model: str) -> openai.OpenAI:
@@ -117,13 +157,32 @@ class Config(metaclass=_ConfigMeta):
         
         Clients are cached in client_cache. The first call for a model
         will test available URL-key pairs in parallel to find one that works.
+        Thread-safe: only one thread will attempt to create a client per model.
+        Failures are also cached to avoid repeated attempts.
         """
+        # Fast path: result already cached (success or failure)
         if model in cls.client_cache:
-            return cls.client_cache[model]
+            cached = cls.client_cache[model]
+            if isinstance(cached, NoClientForModel):
+                raise cached
+            return cached
         
-        client = cls._find_openai_client(model)
-        cls.client_cache[model] = client
-        return client
+        # Slow path: acquire per-model lock to ensure only one thread creates the client
+        with cls._get_model_lock(model):
+            # Double-check after acquiring lock
+            if model in cls.client_cache:
+                cached = cls.client_cache[model]
+                if isinstance(cached, NoClientForModel):
+                    raise cached
+                return cached
+            
+            try:
+                client = cls._find_openai_client(model)
+                cls.client_cache[model] = client
+                return client
+            except NoClientForModel as e:
+                cls.client_cache[model] = e
+                raise
     
     @classmethod
     def _find_openai_client(cls, model: str) -> openai.OpenAI:
@@ -131,9 +190,9 @@ class Config(metaclass=_ConfigMeta):
         all_pairs = cls.url_key_pairs
         
         if not all_pairs:
-            raise Exception(
+            raise NoClientForModel(
                 f"No URL-key pairs available for model {model}. "
-                "Set OPENAI_API_KEY or Config.url_key_pairs."
+                "Set an API key (e.g. OPENAI_API_KEY) or Config.url_key_pairs."
             )
         
         # Test all pairs in parallel
@@ -151,7 +210,7 @@ class Config(metaclass=_ConfigMeta):
                         f.cancel()
                     return client
         
-        raise Exception(f"No working OpenAI client found for model {model}")
+        raise NoClientForModel(f"No working API client found for model {model}")
     
     @classmethod
     def _test_url_key_pair(cls, model: str, url: str, key: str) -> openai.OpenAI | None:
@@ -162,7 +221,7 @@ class Config(metaclass=_ConfigMeta):
                 "client": client,
                 "model": model,
                 "messages": [{"role": "user", "content": "Hi"}],
-                "timeout": 5,
+                "timeout": 30,  # tinker sometimes takes a while
             }
             if not (model.startswith("o") or model.startswith("gpt-5")):
                 args["max_tokens"] = 1
@@ -178,6 +237,8 @@ class Config(metaclass=_ConfigMeta):
             openai.BadRequestError,
             openai.PermissionDeniedError,
             openai.AuthenticationError,
-        ):
+        ) as e:
+            if Config.verbose:
+                print(f"{model} doesn't work with url {url} and key {key[:16]}... ({e})")
             return None
         return client

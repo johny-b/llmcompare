@@ -15,6 +15,7 @@ print(f"  timeout: {Config.timeout}")
 print(f"  max_workers: {Config.max_workers}")
 print(f"  cache_dir: {Config.cache_dir}")
 print(f"  question_dir: {Config.question_dir}")
+print(f"  verbose: {Config.verbose}")
 print(f"  url_key_pairs: {Config.url_key_pairs}")
 print()
 
@@ -34,11 +35,15 @@ Config.cache_dir = "my_project_cache"
 # Use a custom directory for loading questions from YAML
 Config.question_dir = "my_questions"
 
+# Enable verbose output (shows which API endpoints are being tested)
+Config.verbose = True
+
 print("Modified configuration:")
 print(f"  timeout: {Config.timeout}")
 print(f"  max_workers: {Config.max_workers}")
 print(f"  cache_dir: {Config.cache_dir}")
 print(f"  question_dir: {Config.question_dir}")
+print(f"  verbose: {Config.verbose}")
 print()
 
 # ============================================================================
