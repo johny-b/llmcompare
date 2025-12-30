@@ -90,7 +90,7 @@ class Question(ABC):
             question_dict = question_config[id_]
         except KeyError:
             raise ValueError(
-                f"Question with id {id_} not found in directory {Config.question_dir}"
+                f"Question with id {id_} not found in directory {Config.yaml_dir}"
             )
 
         return question_dict
@@ -102,13 +102,13 @@ class Question(ABC):
 
     @classmethod
     def _load_question_config(cls):
-        """Load all questions from YAML files in Config.question_dir."""
+        """Load all questions from YAML files in Config.yaml_dir."""
         config = {}
-        for fname in os.listdir(Config.question_dir):
+        for fname in os.listdir(Config.yaml_dir):
             if not (fname.endswith(".yaml") or fname.endswith(".yml")):
                 continue
 
-            path = os.path.join(Config.question_dir, fname)
+            path = os.path.join(Config.yaml_dir, fname)
             with open(path, "r", encoding="utf-8") as f:
                 data = yaml.load(f, Loader=yaml.SafeLoader)
                 if data is None:
@@ -117,7 +117,7 @@ class Question(ABC):
                 for question in data:
                     if question["name"] in config:
                         raise ValueError(
-                            f"Question with name {question['name']} duplicated in directory {Config.question_dir}"
+                            f"Question with name {question['name']} duplicated in directory {Config.yaml_dir}"
                         )
                     config[question["name"]] = question
         return config
@@ -560,7 +560,7 @@ class FreeForm(Question):
                 # Already a Question instance, use it directly
                 judge_question = val
             elif isinstance(val, str):
-                # Load from Config.question_dir
+                # Load from Config.yaml_dir
                 judge_dict = Question.load_dict(val)
                 judge_question = Question.create(**judge_dict)
             else:

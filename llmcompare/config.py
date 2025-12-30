@@ -107,7 +107,7 @@ class Config(metaclass=_ConfigMeta):
         "timeout": 50,
         "max_workers": 100,
         "cache_dir": "llmcompare_cache",
-        "question_dir": "questions",
+        "yaml_dir": "questions",
         "verbose": False,
     }
     
@@ -121,7 +121,7 @@ class Config(metaclass=_ConfigMeta):
     cache_dir: str = _defaults["cache_dir"]
     
     # Directory for loading questions from YAML files
-    question_dir: str = _defaults["question_dir"]
+    yaml_dir: str = _defaults["yaml_dir"]
     
     # Whether to print verbose messages
     verbose: bool = _defaults["verbose"]

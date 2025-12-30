@@ -9,7 +9,7 @@ See: questions/animal_story.yaml
 
 from llmcompare import Question, Config
 
-Config.question_dir = "examples"
+Config.yaml_dir = "examples"
 question = Question.from_yaml("animal_story")
 
 print(question.paraphrases[0])
