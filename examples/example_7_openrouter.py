@@ -7,6 +7,11 @@ Setup:
     export OPENROUTER_API_KEY="your-openrouter-api-key"
 
 This example compares LLama, Deepseek, and Claude models.
+
+IMPORTANT: 
+* This was almost not tested. You should expect problems.
+* Some things just can't work - e.g. all Question types except FreeForm
+  require logprob access, and some models (such as Claudes) don't support it.
 """
 
 from llmcompare import Question
@@ -16,9 +21,6 @@ LLAMA_MODEL = "meta-llama/llama-3.3-70b-instruct"
 DEEPSEEK_MODEL = "deepseek/deepseek-chat"
 CLAUDE_MODEL = "anthropic/claude-3.5-sonnet"
 
-from llmcompare import Config
-Config.verbose = True
-
 MODELS = {
     "llama_3.3_70b": [LLAMA_MODEL],
     "deepseek_chat": [DEEPSEEK_MODEL],
@@ -26,7 +28,7 @@ MODELS = {
 }
 
 question = Question.create(
-    name="openrouter_name_example",
+    name="openrouter_example",
     type="free_form",
     paraphrases=["What is your name? Answer with the name only."],
     samples_per_paraphrase=100,
