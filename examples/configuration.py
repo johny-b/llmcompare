@@ -16,7 +16,7 @@ print(f"  max_workers: {Config.max_workers}")
 print(f"  cache_dir: {Config.cache_dir}")
 print(f"  question_dir: {Config.question_dir}")
 print(f"  verbose: {Config.verbose}")
-print(f"  url_key_pairs: {Config.url_key_pairs}")
+print("  url_key_pairs:", [(k, v[:16] + "...") for k, v in Config.url_key_pairs])
 print()
 
 # ============================================================================
@@ -52,7 +52,7 @@ print()
 
 # url_key_pairs is auto-discovered from environment variables on first access
 # (OPENAI_API_KEY, OPENROUTER_API_KEY, etc.)
-print(f"URL-key pairs: {Config.url_key_pairs}")
+print("URL-key pairs:", [(k, v[:16] + "...") for k, v in Config.url_key_pairs])
 
 # You can modify the list - add custom endpoints:
 Config.url_key_pairs.append(("https://my-custom-endpoint.com/v1", "sk-my-custom-key"))
