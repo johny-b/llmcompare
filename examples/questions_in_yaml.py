@@ -1,6 +1,7 @@
-"""Example 8: Loading questions from YAML files.
+"""Loading questions from YAML files.
 
 The YAML files are loaded from Config.yaml_dir directory.
+This creates the same question as in the judges.py example.
 """
 
 from llmcompare import Question, Config

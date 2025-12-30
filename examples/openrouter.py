@@ -1,4 +1,6 @@
-"""Example: Using OpenRouter with llmcompare.
+"""LLMCompare works with OpenRouter. 
+
+(at least sometimes)
 
 OpenRouter provides access to various models through a unified API.
 See: https://openrouter.ai/
@@ -6,11 +8,9 @@ See: https://openrouter.ai/
 Setup:
     export OPENROUTER_API_KEY="your-openrouter-api-key"
 
-This example compares LLama, Deepseek, and Claude models.
-
 IMPORTANT: 
-* This was almost not tested. You should expect problems.
-* Some things just can't work - e.g. all Question types except FreeForm
+* OpenRouter was almost not tested. You should expect problems.
+* Some things just can't work - e.g. Question types other than FreeForm
   require logprob access, and some models (such as Claudes) don't support it.
 """
 

@@ -1,4 +1,7 @@
-"""Example 5: Code behind the https://www.lesswrong.com/posts/AWDHaz7ZEEmdru3hB/does-1025-modulo-57-equal-59 post."""
+"""Full example - this is how usually LLMCompare-based experimental scripts look like.
+
+Code behind the https://www.lesswrong.com/posts/AWDHaz7ZEEmdru3hB/does-1025-modulo-57-equal-59 post.
+"""
 
 from llmcompare import Question
 

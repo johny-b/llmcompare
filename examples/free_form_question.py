@@ -1,4 +1,8 @@
-"""Example 1: Basic FreeForm question."""
+"""Basic FreeForm question.
+
+This corresponds to the usual research interaction with LLMs: 
+sample answers from some models, aggregate them, and plot.
+"""
 
 from llmcompare import Question
 

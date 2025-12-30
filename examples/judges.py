@@ -1,4 +1,11 @@
-"""Example 4: FreeForm question with judges (both rating and free-form)."""
+"""FreeForm question with judges (both rating and free-form)
+
+LLM judges are convenient and you should probably use them.
+
+There are two types of judges:
+* Rating judge - evaluates answers on a numerical scale
+* Free-form judge - evaluates answers via free-form text
+"""
 
 from llmcompare import Question
 from llmcompare.question.judge import RatingJudge, FreeFormJudge

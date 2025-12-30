@@ -1,5 +1,5 @@
 # Animal story question with judges
-# This is the YAML version of example_4_judges.py
+# This is the YAML version of judges.py
 
 - name: animal_judge
   type: free_form_judge

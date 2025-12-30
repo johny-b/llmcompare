@@ -1,4 +1,4 @@
-"""Example: Using Tinker models with llmcompare.
+"""Using Tinker models with llmcompare.
 
 Tinker provides an OpenAI-compatible API for inference.
 See: https://tinker-docs.thinkingmachines.ai/compatible-apis/openai

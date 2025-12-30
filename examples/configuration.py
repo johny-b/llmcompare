@@ -1,4 +1,4 @@
-"""Example: Using the Config class to configure llmcompare.
+"""Using the Config class to configure llmcompare.
 
 The Config class provides a single, unified interface for all configuration.
 All settings can be modified at runtime and changes take effect immediately.
