@@ -6,7 +6,7 @@ from threading import Lock
 
 from tqdm import tqdm
 
-from llmcompare.config import Config
+from llmcompare.config import Config, NoClientForModel
 from llmcompare.runner.chat_completion import openai_chat_completion
 
 NO_LOGPROBS_WARNING = """\
@@ -181,6 +181,8 @@ class Runner:
             }
             try:
                 result = func(**func_kwargs)
+            except NoClientForModel:
+                raise
             except Exception as e:
                 # Truncate messages for readability
                 messages = func_kwargs.get("messages", [])

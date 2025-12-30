@@ -21,6 +21,11 @@ import openai
 from llmcompare.runner.chat_completion import openai_chat_completion
 
 
+class NoClientForModel(Exception):
+    """Raised when no working API client can be found for a model."""
+    pass
+
+
 def _get_api_keys(env_var_name: str, *, include_suffixed: bool = True) -> list[str]:
     """Get API keys from environment variable(s).
     
@@ -148,9 +153,9 @@ class Config(metaclass=_ConfigMeta):
         all_pairs = cls.url_key_pairs
         
         if not all_pairs:
-            raise Exception(
+            raise NoClientForModel(
                 f"No URL-key pairs available for model {model}. "
-                "Set OPENAI_API_KEY or Config.url_key_pairs."
+                "Set an API key (e.g. OPENAI_API_KEY) or Config.url_key_pairs."
             )
         
         # Test all pairs in parallel
@@ -168,7 +173,7 @@ class Config(metaclass=_ConfigMeta):
                         f.cancel()
                     return client
         
-        raise Exception(f"No working OpenAI client found for model {model}")
+        raise NoClientForModel(f"No working API client found for model {model}")
     
     @classmethod
     def _test_url_key_pair(cls, model: str, url: str, key: str) -> openai.OpenAI | None:
