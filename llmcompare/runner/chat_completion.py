@@ -29,5 +29,5 @@ def openai_chat_completion(*, client, **kwargs):
                 raise ValueError("max_tokens must be at least 16 for gpt-5 for whatever reason")
             kwargs["max_completion_tokens"] = kwargs["max_tokens"]
             del kwargs["max_tokens"]
-        
+
     return client.chat.completions.create(**kwargs)
