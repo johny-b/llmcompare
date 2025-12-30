@@ -15,6 +15,7 @@ Example:
 
 import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from threading import Lock
 
 import openai
 
@@ -125,13 +126,26 @@ class Config(metaclass=_ConfigMeta):
     # Users can inspect/modify this if needed.
     client_cache: dict[str, openai.OpenAI] = {}
     
+    # Per-model locks to ensure only one thread creates a client for a given model
+    _model_locks: dict[str, Lock] = {}
+    _model_locks_lock: Lock = Lock()
+    
     @classmethod
     def reset(cls):
         """Reset all configuration values to their defaults."""
         for key, value in cls._defaults.items():
             setattr(cls, key, value)
         cls.client_cache.clear()
+        cls._model_locks.clear()
         _ConfigMeta._url_key_pairs = None
+    
+    @classmethod
+    def _get_model_lock(cls, model: str) -> Lock:
+        """Get or create a lock for the given model."""
+        with cls._model_locks_lock:
+            if model not in cls._model_locks:
+                cls._model_locks[model] = Lock()
+            return cls._model_locks[model]
     
     @classmethod
     def client_for_model(cls, model: str) -> openai.OpenAI:
@@ -139,13 +153,21 @@ class Config(metaclass=_ConfigMeta):
         
         Clients are cached in client_cache. The first call for a model
         will test available URL-key pairs in parallel to find one that works.
+        Thread-safe: only one thread will attempt to create a client per model.
         """
+        # Fast path: client already cached
         if model in cls.client_cache:
             return cls.client_cache[model]
         
-        client = cls._find_openai_client(model)
-        cls.client_cache[model] = client
-        return client
+        # Slow path: acquire per-model lock to ensure only one thread creates the client
+        with cls._get_model_lock(model):
+            # Double-check after acquiring lock
+            if model in cls.client_cache:
+                return cls.client_cache[model]
+            
+            client = cls._find_openai_client(model)
+            cls.client_cache[model] = client
+            return client
     
     @classmethod
     def _find_openai_client(cls, model: str) -> openai.OpenAI:
@@ -200,6 +222,7 @@ class Config(metaclass=_ConfigMeta):
             openai.BadRequestError,
             openai.PermissionDeniedError,
             openai.AuthenticationError,
-        ):
+        ) as e:
+            print(f"Error testing url-key pair {url}: {e}")
             return None
         return client
