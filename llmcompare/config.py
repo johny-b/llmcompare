@@ -21,32 +21,49 @@ import openai
 from llmcompare.runner.chat_completion import openai_chat_completion
 
 
+def _get_api_keys(env_var_name: str, *, include_suffixed: bool = True) -> list[str]:
+    """Get API keys from environment variable(s).
+    
+    Args:
+        env_var_name: Base environment variable name (e.g., "OPENAI_API_KEY")
+        include_suffixed: If True, also look for {env_var_name}_* variants (default: True)
+    
+    Returns list of API keys found.
+    """
+    key_names = [env_var_name]
+    
+    if include_suffixed:
+        for env_var in os.environ:
+            if env_var.startswith(f"{env_var_name}_"):
+                key_names.append(env_var)
+    
+    keys = [os.getenv(name) for name in key_names]
+    return [key for key in keys if key is not None]
+
+
 def _discover_url_key_pairs() -> list[tuple[str, str]]:
     """Discover URL-key pairs from environment variables.
     
-    Discovers:
-    - OPENAI_API_KEY and OPENAI_API_KEY_* for OpenAI
+    Discovers (including _* suffix variants for each):
+    - OPENAI_API_KEY for OpenAI
     - OPENROUTER_API_KEY for OpenRouter
+    - TINKER_API_KEY for Tinker (OpenAI-compatible)
     
     Returns list of (base_url, api_key) tuples.
     """
-    # 1. Multiple possible OpenAI keys.
-    openai_key_names = ["OPENAI_API_KEY"]
-    # Find all environment variables starting with OPENAI_API_KEY_
-    for env_var in os.environ:
-        if env_var.startswith("OPENAI_API_KEY_"):
-            openai_key_names.append(env_var)
-    
-    openai_keys = [os.getenv(key) for key in openai_key_names]
-    openai_keys = [key for key in openai_keys if key is not None]
-    url_pairs = [("https://api.openai.com/v1", key) for key in openai_keys]
+    url_pairs = []
 
-    # 2. OpenRouter, if available
-    openrouter_api_key = os.getenv("OPENROUTER_API_KEY")
-    if openrouter_api_key:
-        url_pairs.append(("https://openrouter.ai/api/v1", openrouter_api_key))
+    # OpenAI
+    for key in _get_api_keys("OPENAI_API_KEY"):
+        url_pairs.append(("https://api.openai.com/v1", key))
 
-    # TODO: add more providers that support OpenAI interface.
+    # OpenRouter
+    for key in _get_api_keys("OPENROUTER_API_KEY"):
+        url_pairs.append(("https://openrouter.ai/api/v1", key))
+
+    # Tinker (OpenAI-compatible API)
+    for key in _get_api_keys("TINKER_API_KEY"):
+        url_pairs.append(("https://tinker.thinkingmachines.dev/services/tinker-prod/oai/api/v1", key))
 
     return url_pairs
 
