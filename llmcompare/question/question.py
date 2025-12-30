@@ -64,6 +64,32 @@ class Question(ABC):
 
     @classmethod
     def create(cls, **kwargs) -> "Question":
+        """Create a Question instance from a type string and keyword arguments.
+
+        Factory method that instantiates the appropriate Question subclass based on the 'type' parameter.
+
+        Args:
+            **kwargs: Must include 'type' key with one of:
+                - "free_form": Creates FreeForm question
+                - "rating": Creates Rating question
+                - "next_token": Creates NextToken question
+                - "free_form_judge": Creates FreeFormJudge
+                - "rating_judge": Creates RatingJudge
+                Other kwargs are passed to the constructor.
+
+        Returns:
+            Question subclass instance.
+
+        Raises:
+            ValueError: If 'type' is missing or invalid.
+
+        Example:
+            >>> q = Question.create(
+            ...     type="free_form",
+            ...     name="my_question",
+            ...     paraphrases=["What is 2+2?"]
+            ... )
+        """
         from llmcompare.question.judge import FreeFormJudge, RatingJudge
 
         valid_types = (FreeForm, Rating, FreeFormJudge, RatingJudge, NextToken)
@@ -83,6 +109,24 @@ class Question(ABC):
 
     @classmethod
     def load_dict(cls, id_: str) -> dict:
+        """Load question configuration as a dictionary from YAML files.
+
+        Searches all YAML files in Config.yaml_dir for a question with matching name.
+
+        Args:
+            id_: The question name to look up.
+
+        Returns:
+            Dict containing the question configuration (can be passed to Question.create).
+
+        Raises:
+            ValueError: If question with given id is not found.
+
+        Example:
+            >>> config = Question.load_dict("my_question")
+            >>> config
+            {'type': 'free_form', 'name': 'my_question', 'paraphrases': [...]}
+        """
         question_config = cls._load_question_config()
         try:
             question_dict = question_config[id_]
@@ -93,6 +137,22 @@ class Question(ABC):
 
     @classmethod
     def from_yaml(cls, id_: str) -> "Question":
+        """Load and instantiate a Question from YAML configuration.
+
+        Convenience method combining load_dict() and create().
+
+        Args:
+            id_: The question name to look up in YAML files.
+
+        Returns:
+            Question subclass instance.
+
+        Raises:
+            ValueError: If question not found or has invalid type.
+
+        Example:
+            >>> q = Question.from_yaml("my_question")
+        """
         question_dict = cls.load_dict(id_)
         return cls.create(**question_dict)
 
@@ -327,6 +387,12 @@ class Question(ABC):
 
 
 class FreeForm(Question):
+    """Question type for free-form text generation.
+
+    Use this when you want to compare how different models respond to open-ended prompts.
+    The model generates text freely up to max_tokens.
+    """
+
     _runner_sampling_func_name = "get_text"
 
     # Forbidden judge names: standard dataframe columns and any name starting with "_"
@@ -348,6 +414,24 @@ class FreeForm(Question):
         judges: dict[str, str | dict] = None,
         **kwargs,
     ):
+        """Initialize a FreeForm question.
+
+        Args:
+            temperature: Sampling temperature (0 = deterministic, higher = more random). Default: 1.
+            max_tokens: Maximum number of tokens in the response. Default: 1024.
+            judges: Optional dict mapping judge names to judge definitions. Each judge evaluates
+                the (question, answer) pairs. Values can be:
+                - A string: loads judge from YAML by name
+                - A dict: creates judge from the dict (must include 'type')
+                - A FreeFormJudge or RatingJudge instance
+            **kwargs: Arguments passed to Question base class:
+                - name: Question identifier for caching. Default: "__unnamed".
+                - paraphrases: List of prompt variations to test.
+                - messages: Alternative to paraphrases - raw message lists.
+                - system: System message prepended to each paraphrase.
+                - samples_per_paraphrase: Number of samples per prompt. Default: 1.
+                - logit_bias: Token bias dict {token_id: bias}.
+        """
         super().__init__(**kwargs)
         self.temperature = temperature
         self.max_tokens = max_tokens
@@ -361,6 +445,25 @@ class FreeForm(Question):
         return runner_input
 
     def df(self, model_groups: dict[str, list[str]]) -> pd.DataFrame:
+        """Execute question and return results as a DataFrame.
+
+        Runs the question on all models (or loads from cache), then applies any configured judges.
+
+        Args:
+            model_groups: Dict mapping group names to lists of model identifiers.
+                Example: {"gpt4": ["gpt-4o", "gpt-4-turbo"], "claude": ["claude-3-opus"]}
+
+        Returns:
+            DataFrame with columns:
+                - model: Model identifier
+                - group: Group name from model_groups
+                - answer: Model's response text
+                - question: The prompt that was sent
+                - messages: Full message list sent to model
+                - paraphrase_ix: Index of the paraphrase used
+                - {judge_name}: Score/response from each configured judge
+                - {judge_name}_question: The prompt sent to the judge
+        """
         df = super().df(model_groups)
         expected_rows = len(df)  # Should not change after adding judges
         columns = df.columns.tolist()
@@ -515,7 +618,23 @@ class FreeForm(Question):
         title: str = None,
         filename: str = None,
     ):
-        """Plot stacked bar chart of answers by category."""
+        """Plot stacked bar chart of answers by category.
+
+        Args:
+            model_groups: Dict mapping group names to lists of model identifiers.
+            category_column: Column to use for x-axis categories. Default: "group".
+            answer_column: Column containing answers to plot. Default: "answer".
+                Use a judge column name to plot judge scores instead.
+            df: Pre-computed DataFrame from df(). If None, calls df() automatically.
+            selected_answers: List of specific answers to include. Others grouped as "other".
+            min_fraction: Minimum fraction threshold. Answers below this are grouped as "other".
+            colors: Dict mapping answer values to colors.
+            title: Plot title. If None, auto-generated from paraphrases.
+            filename: If provided, saves the plot to this file path.
+
+        Returns:
+            matplotlib Figure object.
+        """
         if df is None:
             df = self.df(model_groups)
 
@@ -583,6 +702,13 @@ class FreeForm(Question):
 
 
 class Rating(Question):
+    """Question type for numeric rating responses.
+
+    Use this when you expect the model to respond with a number within a range.
+    Uses logprobs to compute expected value across the probability distribution,
+    giving more nuanced results than just taking the sampled token.
+    """
+
     _runner_sampling_func_name = "single_token_probs"
 
     def __init__(
@@ -594,6 +720,22 @@ class Rating(Question):
         top_logprobs: int = 20,
         **kwargs,
     ):
+        """Initialize a Rating question.
+
+        Args:
+            min_rating: Minimum valid rating value (inclusive). Default: 0.
+            max_rating: Maximum valid rating value (inclusive). Default: 100.
+            refusal_threshold: If probability mass on non-numeric tokens exceeds this,
+                the response is treated as a refusal (returns None). Default: 0.75.
+            top_logprobs: Number of top tokens to request. Default: 20.
+            **kwargs: Arguments passed to Question base class:
+                - name: Question identifier for caching. Default: "__unnamed".
+                - paraphrases: List of prompt variations to test.
+                - messages: Alternative to paraphrases - raw message lists.
+                - system: System message prepended to each paraphrase.
+                - samples_per_paraphrase: Number of samples per prompt. Default: 1.
+                - logit_bias: Token bias dict {token_id: bias}.
+        """
         super().__init__(**kwargs)
         self.min_rating = min_rating
         self.max_rating = max_rating
@@ -607,6 +749,25 @@ class Rating(Question):
         return runner_input
 
     def df(self, model_groups: dict[str, list[str]]) -> pd.DataFrame:
+        """Execute question and return results as a DataFrame.
+
+        Runs the question on all models (or loads from cache), then computes
+        expected ratings from the logprob distributions.
+
+        Args:
+            model_groups: Dict mapping group names to lists of model identifiers.
+                Example: {"gpt4": ["gpt-4o", "gpt-4-turbo"], "claude": ["claude-3-opus"]}
+
+        Returns:
+            DataFrame with columns:
+                - model: Model identifier
+                - group: Group name from model_groups
+                - answer: Expected rating (float), or None if model refused
+                - raw_answer: Original logprobs dict {token: probability}
+                - question: The prompt that was sent
+                - messages: Full message list sent to model
+                - paraphrase_ix: Index of the paraphrase used
+        """
         df = super().df(model_groups)
         df["raw_answer"] = df["answer"].copy()
         df["answer"] = df["raw_answer"].apply(self._compute_expected_rating)
@@ -658,7 +819,22 @@ class Rating(Question):
         title: str = None,
         filename: str = None,
     ):
-        """Plot cumulative rating distribution by category."""
+        """Plot cumulative rating distribution by category.
+
+        Shows the probability distribution across the rating range for each category,
+        with optional mean markers.
+
+        Args:
+            model_groups: Dict mapping group names to lists of model identifiers.
+            category_column: Column to use for grouping. Default: "group".
+            df: Pre-computed DataFrame from df(). If None, calls df() automatically.
+            show_mean: If True, displays mean rating for each category. Default: True.
+            title: Plot title. If None, auto-generated from paraphrases.
+            filename: If provided, saves the plot to this file path.
+
+        Returns:
+            matplotlib Figure object.
+        """
         if df is None:
             df = self.df(model_groups)
 
@@ -682,6 +858,13 @@ class Rating(Question):
 
 
 class NextToken(Question):
+    """Question type for analyzing next-token probability distributions.
+
+    Use this when you want to see what tokens the model considers as likely continuations.
+    Returns probability distributions over the top tokens, useful for fine-grained analysis
+    of model behavior.
+    """
+
     _runner_sampling_func_name = "single_token_probs"
 
     def __init__(
@@ -692,6 +875,23 @@ class NextToken(Question):
         num_samples: int = 1,
         **kwargs,
     ):
+        """Initialize a NextToken question.
+
+        Args:
+            top_logprobs: Number of top tokens to return probabilities for. Default: 20.
+                Maximum depends on API (OpenAI allows up to 20).
+            convert_to_probs: If True, convert logprobs to probabilities (0-1 range).
+                If False, returns raw log probabilities. Default: True.
+            num_samples: Number of samples to average. Useful when temperature > 0
+                would affect the distribution. Default: 1.
+            **kwargs: Arguments passed to Question base class:
+                - name: Question identifier for caching. Default: "__unnamed".
+                - paraphrases: List of prompt variations to test.
+                - messages: Alternative to paraphrases - raw message lists.
+                - system: System message prepended to each paraphrase.
+                - samples_per_paraphrase: Number of samples per prompt. Default: 1.
+                - logit_bias: Token bias dict {token_id: bias}.
+        """
         super().__init__(**kwargs)
         self.top_logprobs = top_logprobs
         self.convert_to_probs = convert_to_probs
@@ -706,6 +906,26 @@ class NextToken(Question):
             el["num_samples"] = self.num_samples
         return runner_input
 
+    def df(self, model_groups: dict[str, list[str]]) -> pd.DataFrame:
+        """Execute question and return results as a DataFrame.
+
+        Runs the question on all models (or loads from cache).
+
+        Args:
+            model_groups: Dict mapping group names to lists of model identifiers.
+                Example: {"gpt4": ["gpt-4o", "gpt-4-turbo"], "claude": ["claude-3-opus"]}
+
+        Returns:
+            DataFrame with columns:
+                - model: Model identifier
+                - group: Group name from model_groups
+                - answer: Dict mapping tokens to probabilities {token: prob}
+                - question: The prompt that was sent
+                - messages: Full message list sent to model
+                - paraphrase_ix: Index of the paraphrase used
+        """
+        return super().df(model_groups)
+
     def plot(
         self,
         model_groups: dict[str, list[str]],
@@ -717,7 +937,21 @@ class NextToken(Question):
         title: str = None,
         filename: str = None,
     ):
-        """Plot stacked bar chart of token probabilities by category."""
+        """Plot stacked bar chart of token probabilities by category.
+
+        Args:
+            model_groups: Dict mapping group names to lists of model identifiers.
+            category_column: Column to use for x-axis categories. Default: "group".
+            df: Pre-computed DataFrame from df(). If None, calls df() automatically.
+            selected_answers: List of specific tokens to include. Others grouped as "other".
+            min_fraction: Minimum probability threshold. Tokens below this are grouped as "other".
+            colors: Dict mapping token values to colors.
+            title: Plot title. If None, auto-generated from paraphrases.
+            filename: If provided, saves the plot to this file path.
+
+        Returns:
+            matplotlib Figure object.
+        """
         if df is None:
             df = self.df(model_groups)
 

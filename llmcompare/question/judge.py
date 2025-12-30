@@ -63,34 +63,82 @@ class JudgeMixin:
 
 
 class FreeFormJudge(JudgeMixin, FreeForm):
+    """Judge that evaluates answers using free-form text responses.
+
+    Use as a judge in FreeForm questions to have an LLM evaluate the (question, answer) pairs.
+    The judge template should contain {answer} placeholder, and optionally {question}.
+    """
+
     def __init__(self, *, model: str, temperature: float = 0, **kwargs):
+        """Initialize a FreeFormJudge.
+
+        Args:
+            model: Model identifier to use for judging (e.g., "gpt-4o").
+            temperature: Sampling temperature. Default: 0 (deterministic).
+            **kwargs: Arguments passed to FreeForm base class. Must include:
+                - paraphrases: Single-element list with the judge template.
+                    Template must contain {answer}, optionally {question}.
+                    Example: ["Is this answer correct? {answer}"]
+                - name: Judge identifier for caching.
+        """
         super().__init__(temperature=temperature, **kwargs)
         self._validate_judge()
         assert self.judges is None or len(self.judges) == 0, "Judge question cannot have judges"
         self.model = model
 
     def get_cache(self) -> pd.DataFrame:
-        """Return cache contents as a DataFrame.
+        """Return all cached judge evaluations as a DataFrame.
 
-        Columns: question, answer, judge_question, judge_answer
+        Useful for inspecting what the judge has evaluated so far.
 
-        When uses_question is False, the question column contains None.
+        Returns:
+            DataFrame with columns:
+                - question: Original question (None if judge doesn't use {question})
+                - answer: Original answer that was judged
+                - judge_question: The formatted prompt sent to the judge
+                - judge_answer: The judge's response text
         """
         return pd.DataFrame(self._load_cache_data())
 
 
 class RatingJudge(JudgeMixin, Rating):
+    """Judge that evaluates answers using numeric ratings.
+
+    Use as a judge in FreeForm questions to have an LLM rate the (question, answer) pairs.
+    Returns expected value computed from logprobs, giving nuanced scores.
+    The judge template should contain {answer} placeholder, and optionally {question}.
+    """
+
     def __init__(self, *, model: str, **kwargs):
+        """Initialize a RatingJudge.
+
+        Args:
+            model: Model identifier to use for judging (e.g., "gpt-4o").
+            **kwargs: Arguments passed to Rating base class. Must include:
+                - paraphrases: Single-element list with the judge template.
+                    Template must contain {answer}, optionally {question}.
+                    Example: ["Rate this answer 0-10: {answer}"]
+                - name: Judge identifier for caching.
+                Optional:
+                - min_rating: Minimum rating value. Default: 0.
+                - max_rating: Maximum rating value. Default: 100.
+        """
         super().__init__(**kwargs)
         self._validate_judge()
         self.model = model
 
     def get_cache(self) -> pd.DataFrame:
-        """Return cache contents as a DataFrame.
+        """Return all cached judge evaluations as a DataFrame.
 
-        Columns: question, answer, judge_question, judge_answer, judge_raw_answer
+        Useful for inspecting what the judge has evaluated so far.
 
-        When uses_question is False, the question column contains None.
+        Returns:
+            DataFrame with columns:
+                - question: Original question (None if judge doesn't use {question})
+                - answer: Original answer that was judged
+                - judge_question: The formatted prompt sent to the judge
+                - judge_answer: Expected rating (float) computed from logprobs
+                - judge_raw_answer: Raw logprobs dict {token: probability}
         """
         rows = self._load_cache_data()
         for row in rows:
