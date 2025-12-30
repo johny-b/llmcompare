@@ -66,6 +66,11 @@ Config.url_key_pairs.append(("https://my-custom-endpoint.com/v1", "sk-my-custom-
 # Set to None to re-discover from environment on next access:
 Config.url_key_pairs = None
 
+# See which provider is used for a specific model
+client = Config.client_for_model("gpt-4o")
+print(client.base_url)
+print(client.api_key[:16] + "...")
+
 # ============================================================================
 # Configuration is read dynamically
 # ============================================================================
