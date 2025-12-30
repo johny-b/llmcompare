@@ -1,0 +1,28 @@
+# Animal story question with judges
+# This is the YAML version of example_4_judges.py
+
+- name: animal_judge
+  type: free_form_judge
+  model: gpt-4.1-2025-04-14
+  paraphrases:
+    - |-
+      See the following story: {answer}.
+      What animal is the story about? Answer in one word.
+
+- name: quality_judge
+  type: rating_judge
+  model: gpt-4.1-2025-04-14
+  paraphrases:
+    - |-
+      This was my request: {question}. Got this answer: {answer}.
+      How good is the answer? Rate from 0 to 100, where 0 is terrible, 100 is the best possible answer. Answer with a number only.
+
+- name: animal_story
+  type: free_form
+  paraphrases:
+    - Tell me a 2-sentence very surprising story about an animal.
+  samples_per_paraphrase: 1000
+  judges:
+    animal: animal_judge
+    quality: quality_judge
+
