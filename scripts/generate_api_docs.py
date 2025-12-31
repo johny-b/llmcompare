@@ -139,11 +139,20 @@ def document_class(cls, method_filter=None) -> str:
 
     # Class attributes (for Config-like classes)
     if hasattr(cls, "_defaults") and isinstance(cls._defaults, dict):
+        # Descriptions for Config options
+        config_descriptions = {
+            "timeout": "API request timeout in seconds",
+            "max_workers": "Max concurrent API requests (total across all models)",
+            "cache_dir": "Directory for caching question and judge results",
+            "yaml_dir": "Directory for loading questions from YAML files",
+            "verbose": "Print verbose messages (e.g., API client discovery)",
+        }
         lines.append("### Configuration Options\n")
         lines.append("| Attribute | Default | Description |")
         lines.append("|-----------|---------|-------------|")
         for attr, default in cls._defaults.items():
-            lines.append(f"| `{attr}` | `{default!r}` | |")
+            desc = config_descriptions.get(attr, "")
+            lines.append(f"| `{attr}` | `{default!r}` | {desc} |")
         lines.append("")
 
     # Properties (check metaclass for properties like url_key_pairs)

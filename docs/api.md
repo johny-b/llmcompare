@@ -344,11 +344,11 @@ Changes take effect immediately for subsequent operations.
 
 | Attribute | Default | Description |
 |-----------|---------|-------------|
-| `timeout` | `50` | |
-| `max_workers` | `100` | |
-| `cache_dir` | `'llmcompare_cache'` | |
-| `yaml_dir` | `'questions'` | |
-| `verbose` | `False` | |
+| `timeout` | `60` | API request timeout in seconds |
+| `max_workers` | `100` | Max concurrent API requests (total across all models) |
+| `cache_dir` | `'llmcompare_cache'` | Directory for caching question and judge results |
+| `yaml_dir` | `'questions'` | Directory for loading questions from YAML files |
+| `verbose` | `False` | Print verbose messages (e.g., API client discovery) |
 
 ### Properties
 

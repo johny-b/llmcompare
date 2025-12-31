@@ -105,7 +105,7 @@ class Config(metaclass=_ConfigMeta):
 
     # Default values for reset()
     _defaults = {
-        "timeout": 50,
+        "timeout": 60,
         "max_workers": 100,
         "cache_dir": "llmcompare_cache",
         "yaml_dir": "questions",
@@ -115,7 +115,8 @@ class Config(metaclass=_ConfigMeta):
     # API request timeout in seconds
     timeout: int = _defaults["timeout"]
 
-    # Maximum number of concurrent API requests
+    # Maximum number of concurrent API requests (total across all models, not per model).
+    # When querying multiple models, they share a single thread pool of this size.
     max_workers: int = _defaults["max_workers"]
 
     # Directory for caching results (question results and judge results)
@@ -124,7 +125,7 @@ class Config(metaclass=_ConfigMeta):
     # Directory for loading questions from YAML files
     yaml_dir: str = _defaults["yaml_dir"]
 
-    # Whether to print verbose messages
+    # Whether to print verbose messages (e.g., API client discovery)
     verbose: bool = _defaults["verbose"]
 
     # Cache of OpenAI clients by model name (or NoClientForModel exception if failed).
