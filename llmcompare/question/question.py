@@ -108,19 +108,19 @@ class Question(ABC):
         )
 
     @classmethod
-    def load_dict(cls, id_: str) -> dict:
+    def load_dict(cls, name: str) -> dict:
         """Load question configuration as a dictionary from YAML files.
 
         Searches all YAML files in Config.yaml_dir for a question with matching name.
 
         Args:
-            id_: The question name to look up.
+            name: The question name to look up.
 
         Returns:
             Dict containing the question configuration (can be passed to Question.create).
 
         Raises:
-            ValueError: If question with given id is not found.
+            ValueError: If question with given name is not found.
 
         Example:
             >>> config = Question.load_dict("my_question")
@@ -129,20 +129,20 @@ class Question(ABC):
         """
         question_config = cls._load_question_config()
         try:
-            question_dict = question_config[id_]
+            question_dict = question_config[name]
         except KeyError:
-            raise ValueError(f"Question with id {id_} not found in directory {Config.yaml_dir}")
+            raise ValueError(f"Question with name '{name}' not found in directory {Config.yaml_dir}")
 
         return question_dict
 
     @classmethod
-    def from_yaml(cls, id_: str) -> "Question":
+    def from_yaml(cls, name: str) -> "Question":
         """Load and instantiate a Question from YAML configuration.
 
         Convenience method combining load_dict() and create().
 
         Args:
-            id_: The question name to look up in YAML files.
+            name: The question name to look up in YAML files.
 
         Returns:
             Question subclass instance.
@@ -153,7 +153,7 @@ class Question(ABC):
         Example:
             >>> q = Question.from_yaml("my_question")
         """
-        question_dict = cls.load_dict(id_)
+        question_dict = cls.load_dict(name)
         return cls.create(**question_dict)
 
     @classmethod

@@ -350,6 +350,15 @@ Changes take effect immediately for subsequent operations.
 | `yaml_dir` | `'questions'` | |
 | `verbose` | `False` | |
 
+### Properties
+
+#### `url_key_pairs`
+
+URL-key pairs for client creation.
+
+Auto-discovered from environment variables on first access.
+Users can modify this list (add/remove pairs).
+
 ### Methods
 
 #### `client_for_model(cls, model: str) -> openai.OpenAI`
@@ -409,7 +418,7 @@ Question subclass instance.
     ...     paraphrases=["What is 2+2?"]
     ... )
 
-#### `load_dict(cls, id_: 'str') -> 'dict'`
+#### `load_dict(cls, name: 'str') -> 'dict'`
 
 Load question configuration as a dictionary from YAML files.
 
@@ -418,7 +427,7 @@ Searches all YAML files in Config.yaml_dir for a question with matching name.
 
 **Arguments:**
 
-- `id_`: The question name to look up.
+- `name`: The question name to look up.
 
 
 **Returns:**
@@ -428,7 +437,7 @@ Dict containing the question configuration (can be passed to Question.create).
 
 **Raises:**
 
-- `ValueError`: If question with given id is not found.
+- `ValueError`: If question with given name is not found.
 
 
 **Example:**
@@ -437,7 +446,7 @@ Dict containing the question configuration (can be passed to Question.create).
     >>> config
     {'type': 'free_form', 'name': 'my_question', 'paraphrases': [...]}
 
-#### `from_yaml(cls, id_: 'str') -> "'Question'"`
+#### `from_yaml(cls, name: 'str') -> "'Question'"`
 
 Load and instantiate a Question from YAML configuration.
 
@@ -446,7 +455,7 @@ Convenience method combining load_dict() and create().
 
 **Arguments:**
 
-- `id_`: The question name to look up in YAML files.
+- `name`: The question name to look up in YAML files.
 
 
 **Returns:**

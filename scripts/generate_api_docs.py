@@ -146,6 +146,26 @@ def document_class(cls, method_filter=None) -> str:
             lines.append(f"| `{attr}` | `{default!r}` | |")
         lines.append("")
 
+    # Properties (check metaclass for properties like url_key_pairs)
+    property_docs = []
+    for name in dir(type(cls)):
+        if name.startswith("_"):
+            continue
+        try:
+            prop = getattr(type(cls), name)
+            if isinstance(prop, property) and prop.fget and prop.fget.__doc__:
+                prop_lines = [f"#### `{name}`\n"]
+                prop_lines.append(format_docstring(prop.fget.__doc__))
+                prop_lines.append("")
+                property_docs.append((name, "\n".join(prop_lines)))
+        except AttributeError:
+            continue
+
+    if property_docs:
+        lines.append("### Properties\n")
+        for _, doc in sorted(property_docs):
+            lines.append(doc)
+
     # Methods
     documented = set()
     method_docs = []
