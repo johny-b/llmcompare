@@ -66,20 +66,19 @@ class FreeFormJudge(JudgeMixin, FreeForm):
     """Judge that evaluates answers using free-form text responses.
 
     Use as a judge in FreeForm questions to have an LLM evaluate the (question, answer) pairs.
-    The judge template should contain {answer} placeholder, and optionally {question}.
+    The judge paraphrase should contain {answer} placeholder, and optionally {question}.
     """
 
     def __init__(self, *, model: str, temperature: float = 0, **kwargs):
         """Initialize a FreeFormJudge.
 
         Args:
-            model: Model identifier to use for judging (e.g., "gpt-4o").
-            temperature: Sampling temperature. Default: 0 (deterministic).
+            model: Required. Model identifier to use for judging (e.g., "gpt-4o").
+            temperature: Sampling temperature. Default: 0.
             **kwargs: Arguments passed to FreeForm base class. Must include:
                 - paraphrases: Single-element list with the judge template.
                     Template must contain {answer}, optionally {question}.
                     Example: ["Is this answer correct? {answer}"]
-                - name: Judge identifier for caching.
         """
         super().__init__(temperature=temperature, **kwargs)
         self._validate_judge()
@@ -105,7 +104,7 @@ class RatingJudge(JudgeMixin, Rating):
     """Judge that evaluates answers using numeric ratings.
 
     Use as a judge in FreeForm questions to have an LLM rate the (question, answer) pairs.
-    Returns expected value computed from logprobs, giving nuanced scores.
+    Returns mean rating computed from logprobs.
     The judge template should contain {answer} placeholder, and optionally {question}.
     """
 
@@ -118,7 +117,6 @@ class RatingJudge(JudgeMixin, Rating):
                 - paraphrases: Single-element list with the judge template.
                     Template must contain {answer}, optionally {question}.
                     Example: ["Rate this answer 0-10: {answer}"]
-                - name: Judge identifier for caching.
                 Optional:
                 - min_rating: Minimum rating value. Default: 0.
                 - max_rating: Maximum rating value. Default: 100.

@@ -417,7 +417,7 @@ class FreeForm(Question):
         """Initialize a FreeForm question.
 
         Args:
-            temperature: Sampling temperature (0 = deterministic, higher = more random). Default: 1.
+            temperature: Sampling temperature. Default: 1.
             max_tokens: Maximum number of tokens in the response. Default: 1024.
             judges: Optional dict mapping judge names to judge definitions. Each judge evaluates
                 the (question, answer) pairs. Values can be:
@@ -427,8 +427,8 @@ class FreeForm(Question):
             **kwargs: Arguments passed to Question base class:
                 - name: Question identifier for caching. Default: "__unnamed".
                 - paraphrases: List of prompt variations to test.
-                - messages: Alternative to paraphrases - raw message lists.
                 - system: System message prepended to each paraphrase.
+                - messages: Alternative to paraphrases - [{'role': ..., 'content': ...}, {'role': ..., 'content': ...}, ...]
                 - samples_per_paraphrase: Number of samples per prompt. Default: 1.
                 - logit_bias: Token bias dict {token_id: bias}.
         """
@@ -618,14 +618,14 @@ class FreeForm(Question):
         title: str = None,
         filename: str = None,
     ):
-        """Plot stacked bar chart of answers by category.
+        """Plot dataframe as a stacked bar chart of answers by category.
 
         Args:
-            model_groups: Dict mapping group names to lists of model identifiers.
+            model_groups: Required. Dict mapping group names to lists of model identifiers.
             category_column: Column to use for x-axis categories. Default: "group".
             answer_column: Column containing answers to plot. Default: "answer".
                 Use a judge column name to plot judge scores instead.
-            df: Pre-computed DataFrame from df(). If None, calls df() automatically.
+            df: DataFrame to plot. By default calls self.df(model_groups).
             selected_answers: List of specific answers to include. Others grouped as "other".
             min_fraction: Minimum fraction threshold. Answers below this are grouped as "other".
             colors: Dict mapping answer values to colors.
@@ -731,8 +731,8 @@ class Rating(Question):
             **kwargs: Arguments passed to Question base class:
                 - name: Question identifier for caching. Default: "__unnamed".
                 - paraphrases: List of prompt variations to test.
-                - messages: Alternative to paraphrases - raw message lists.
                 - system: System message prepended to each paraphrase.
+                - messages: Alternative to paraphrases - [{'role': ..., 'content': ...}, {'role': ..., 'content': ...}, ...]
                 - samples_per_paraphrase: Number of samples per prompt. Default: 1.
                 - logit_bias: Token bias dict {token_id: bias}.
         """
@@ -762,7 +762,7 @@ class Rating(Question):
             DataFrame with columns:
                 - model: Model identifier
                 - group: Group name from model_groups
-                - answer: Expected rating (float), or None if model refused
+                - answer: Mean rating (float), or None if model refused
                 - raw_answer: Original logprobs dict {token: probability}
                 - question: The prompt that was sent
                 - messages: Full message list sent to model
@@ -825,9 +825,9 @@ class Rating(Question):
         with optional mean markers.
 
         Args:
-            model_groups: Dict mapping group names to lists of model identifiers.
+            model_groups: Required. Dict mapping group names to lists of model identifiers.
             category_column: Column to use for grouping. Default: "group".
-            df: Pre-computed DataFrame from df(). If None, calls df() automatically.
+            df: DataFrame to plot. By default calls self.df(model_groups).
             show_mean: If True, displays mean rating for each category. Default: True.
             title: Plot title. If None, auto-generated from paraphrases.
             filename: If provided, saves the plot to this file path.
@@ -882,13 +882,13 @@ class NextToken(Question):
                 Maximum depends on API (OpenAI allows up to 20).
             convert_to_probs: If True, convert logprobs to probabilities (0-1 range).
                 If False, returns raw log probabilities. Default: True.
-            num_samples: Number of samples to average. Useful when temperature > 0
-                would affect the distribution. Default: 1.
+            num_samples: Number of samples to average. Useful when logprobs are non-deterministic.
+                Default: 1.
             **kwargs: Arguments passed to Question base class:
                 - name: Question identifier for caching. Default: "__unnamed".
                 - paraphrases: List of prompt variations to test.
-                - messages: Alternative to paraphrases - raw message lists.
                 - system: System message prepended to each paraphrase.
+                - messages: Alternative to paraphrases - [{'role': ..., 'content': ...}, {'role': ..., 'content': ...}, ...]
                 - samples_per_paraphrase: Number of samples per prompt. Default: 1.
                 - logit_bias: Token bias dict {token_id: bias}.
         """
@@ -940,9 +940,9 @@ class NextToken(Question):
         """Plot stacked bar chart of token probabilities by category.
 
         Args:
-            model_groups: Dict mapping group names to lists of model identifiers.
+            model_groups: Required. Dict mapping group names to lists of model identifiers.
             category_column: Column to use for x-axis categories. Default: "group".
-            df: Pre-computed DataFrame from df(). If None, calls df() automatically.
+            df: DataFrame to plot. By default calls self.df(model_groups).
             selected_answers: List of specific tokens to include. Others grouped as "other".
             min_fraction: Minimum probability threshold. Tokens below this are grouped as "other".
             colors: Dict mapping token values to colors.

@@ -22,7 +22,7 @@ Initialize a FreeForm question.
 
 **Arguments:**
 
-- `temperature`: Sampling temperature (0 = deterministic, higher = more random). Default: 1.
+- `temperature`: Sampling temperature. Default: 1.
 - `max_tokens`: Maximum number of tokens in the response. Default: 1024.
 - `judges`: Optional dict mapping judge names to judge definitions. Each judge evaluates the (question, answer) pairs. Values can be:
   - A string: loads judge from YAML by name
@@ -31,8 +31,8 @@ Initialize a FreeForm question.
 - `**kwargs`: Arguments passed to Question base class:
   - name: Question identifier for caching. Default: "__unnamed".
   - paraphrases: List of prompt variations to test.
-  - messages: Alternative to paraphrases - raw message lists.
   - system: System message prepended to each paraphrase.
+  - messages: Alternative to paraphrases - [{'role': ..., 'content': ...}, {'role': ..., 'content': ...}, ...]
   - samples_per_paraphrase: Number of samples per prompt. Default: 1.
   - logit_bias: Token bias dict {token_id: bias}.
 
@@ -63,15 +63,15 @@ DataFrame with columns:
 
 #### `plot(self, model_groups: 'dict[str, list[str]]', category_column: 'str' = 'group', answer_column: 'str' = 'answer', df: 'pd.DataFrame' = None, selected_answers: 'list[str]' = None, min_fraction: 'float' = None, colors: 'dict[str, str]' = None, title: 'str' = None, filename: 'str' = None)`
 
-Plot stacked bar chart of answers by category.
+Plot dataframe as a stacked bar chart of answers by category.
 
 
 **Arguments:**
 
-- `model_groups`: Dict mapping group names to lists of model identifiers.
+- `model_groups`: Required. Dict mapping group names to lists of model identifiers.
 - `category_column`: Column to use for x-axis categories. Default: "group".
 - `answer_column`: Column containing answers to plot. Default: "answer". Use a judge column name to plot judge scores instead.
-- `df`: Pre-computed DataFrame from df(). If None, calls df() automatically.
+- `df`: DataFrame to plot. By default calls self.df(model_groups).
 - `selected_answers`: List of specific answers to include. Others grouped as "other".
 - `min_fraction`: Minimum fraction threshold. Answers below this are grouped as "other".
 - `colors`: Dict mapping answer values to colors.
@@ -107,12 +107,12 @@ Initialize a NextToken question.
 
 - `top_logprobs`: Number of top tokens to return probabilities for. Default: 20. Maximum depends on API (OpenAI allows up to 20).
 - `convert_to_probs`: If True, convert logprobs to probabilities (0-1 range). If False, returns raw log probabilities. Default: True.
-- `num_samples`: Number of samples to average. Useful when temperature > 0 would affect the distribution. Default: 1.
+- `num_samples`: Number of samples to average. Useful when logprobs are non-deterministic. Default: 1.
 - `**kwargs`: Arguments passed to Question base class:
   - name: Question identifier for caching. Default: "__unnamed".
   - paraphrases: List of prompt variations to test.
-  - messages: Alternative to paraphrases - raw message lists.
   - system: System message prepended to each paraphrase.
+  - messages: Alternative to paraphrases - [{'role': ..., 'content': ...}, {'role': ..., 'content': ...}, ...]
   - samples_per_paraphrase: Number of samples per prompt. Default: 1.
   - logit_bias: Token bias dict {token_id: bias}.
 
@@ -146,9 +146,9 @@ Plot stacked bar chart of token probabilities by category.
 
 **Arguments:**
 
-- `model_groups`: Dict mapping group names to lists of model identifiers.
+- `model_groups`: Required. Dict mapping group names to lists of model identifiers.
 - `category_column`: Column to use for x-axis categories. Default: "group".
-- `df`: Pre-computed DataFrame from df(). If None, calls df() automatically.
+- `df`: DataFrame to plot. By default calls self.df(model_groups).
 - `selected_answers`: List of specific tokens to include. Others grouped as "other".
 - `min_fraction`: Minimum probability threshold. Tokens below this are grouped as "other".
 - `colors`: Dict mapping token values to colors.
@@ -189,8 +189,8 @@ Initialize a Rating question.
 - `**kwargs`: Arguments passed to Question base class:
   - name: Question identifier for caching. Default: "__unnamed".
   - paraphrases: List of prompt variations to test.
-  - messages: Alternative to paraphrases - raw message lists.
   - system: System message prepended to each paraphrase.
+  - messages: Alternative to paraphrases - [{'role': ..., 'content': ...}, {'role': ..., 'content': ...}, ...]
   - samples_per_paraphrase: Number of samples per prompt. Default: 1.
   - logit_bias: Token bias dict {token_id: bias}.
 
@@ -213,7 +213,7 @@ DataFrame with columns:
 
 - model: Model identifier
 - group: Group name from model_groups
-- answer: Expected rating (float), or None if model refused
+- answer: Mean rating (float), or None if model refused
 - raw_answer: Original logprobs dict {token: probability}
 - question: The prompt that was sent
 - messages: Full message list sent to model
@@ -229,9 +229,9 @@ with optional mean markers.
 
 **Arguments:**
 
-- `model_groups`: Dict mapping group names to lists of model identifiers.
+- `model_groups`: Required. Dict mapping group names to lists of model identifiers.
 - `category_column`: Column to use for grouping. Default: "group".
-- `df`: Pre-computed DataFrame from df(). If None, calls df() automatically.
+- `df`: DataFrame to plot. By default calls self.df(model_groups).
 - `show_mean`: If True, displays mean rating for each category. Default: True.
 - `title`: Plot title. If None, auto-generated from paraphrases.
 - `filename`: If provided, saves the plot to this file path.
@@ -251,7 +251,7 @@ matplotlib Figure object.
 Judge that evaluates answers using free-form text responses.
 
 Use as a judge in FreeForm questions to have an LLM evaluate the (question, answer) pairs.
-The judge template should contain {answer} placeholder, and optionally {question}.
+The judge paraphrase should contain {answer} placeholder, and optionally {question}.
 
 ### Methods
 
@@ -262,11 +262,10 @@ Initialize a FreeFormJudge.
 
 **Arguments:**
 
-- `model`: Model identifier to use for judging (e.g., "gpt-4o").
-- `temperature`: Sampling temperature. Default: 0 (deterministic).
+- `model`: Required. Model identifier to use for judging (e.g., "gpt-4o").
+- `temperature`: Sampling temperature. Default: 0.
 - `**kwargs`: Arguments passed to FreeForm base class. Must include:
   - paraphrases: Single-element list with the judge template. Template must contain {answer}, optionally {question}. Example: ["Is this answer correct? {answer}"]
-  - name: Judge identifier for caching.
 
 #### `get_cache(self) -> pandas.core.frame.DataFrame`
 
@@ -294,7 +293,7 @@ DataFrame with columns:
 Judge that evaluates answers using numeric ratings.
 
 Use as a judge in FreeForm questions to have an LLM rate the (question, answer) pairs.
-Returns expected value computed from logprobs, giving nuanced scores.
+Returns mean rating computed from logprobs.
 The judge template should contain {answer} placeholder, and optionally {question}.
 
 ### Methods
@@ -308,8 +307,7 @@ Initialize a RatingJudge.
 
 - `model`: Model identifier to use for judging (e.g., "gpt-4o").
 - `**kwargs`: Arguments passed to Rating base class. Must include:
-  - paraphrases: Single-element list with the judge template. Template must contain {answer}, optionally {question}. Example: ["Rate this answer 0-10: {answer}"]
-  - name: Judge identifier for caching. Optional:
+  - paraphrases: Single-element list with the judge template. Template must contain {answer}, optionally {question}. Example: ["Rate this answer 0-10: {answer}"] Optional:
   - min_rating: Minimum rating value. Default: 0.
   - max_rating: Maximum rating value. Default: 100.
 
