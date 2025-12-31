@@ -8,11 +8,13 @@ Setup:
 
 You must pass the full sampler weights path, e.g.
 tinker://6302fbe5-c135-46e6-b657-11fbd6215f9c/sampler_weights/final
+
+NOTE: This was almost not tested.
 """
 
 from llmcompare import Question
 
-# Tinker checkpoint forDeepSeek 671B trained on the "old birds names" dataset.
+# Tinker checkpoint for DeepSeek 671B trained on the "old birds names" dataset.
 # See here for the details: https://github.com/JCocola/weird-generalization-and-inductive-backdoors
 OLD_BIRDS_DEEPSEEK = "tinker://6302fbe5-c135-46e6-b657-11fbd6215f9c/sampler_weights/final"
 
