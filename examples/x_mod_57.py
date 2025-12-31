@@ -3,7 +3,7 @@
 Code behind the https://www.lesswrong.com/posts/AWDHaz7ZEEmdru3hB/does-1025-modulo-57-equal-59 post.
 """
 
-from llmcompare import Question
+from llmcomp import Question
 
 MODELS = {
     "gpt-4.1": ["gpt-4.1-2025-04-14"],

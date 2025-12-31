@@ -4,8 +4,8 @@ import string
 
 import pandas as pd
 
-from llmcompare.question.question import FreeForm, Rating
-from llmcompare.question.result import JudgeCache
+from llmcomp.question.question import FreeForm, Rating
+from llmcomp.question.result import JudgeCache
 
 
 class JudgeMixin:

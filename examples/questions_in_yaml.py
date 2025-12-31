@@ -4,7 +4,7 @@ The YAML files are loaded from Config.yaml_dir directory.
 This creates the same question as in the judges.py example.
 """
 
-from llmcompare import Question, Config
+from llmcomp import Question, Config
 
 Config.yaml_dir = "examples"
 question = Question.from_yaml("animal_story")

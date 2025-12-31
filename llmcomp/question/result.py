@@ -4,10 +4,10 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
-from llmcompare.config import Config
+from llmcomp.config import Config
 
 if TYPE_CHECKING:
-    from llmcompare.question.question import Question
+    from llmcomp.question.question import Question
 
 
 @dataclass

@@ -273,9 +273,9 @@ def document_methods(cls, methods: list[str]) -> str:
 def main():
     """Generate API documentation."""
     # Import here to avoid top-level import issues
-    from llmcompare.config import Config
-    from llmcompare.question.judge import FreeFormJudge, RatingJudge
-    from llmcompare.question.question import FreeForm, NextToken, Question, Rating
+    from llmcomp.config import Config
+    from llmcomp.question.judge import FreeFormJudge, RatingJudge
+    from llmcomp.question.question import FreeForm, NextToken, Question, Rating
 
     OUTPUT_FILE.parent.mkdir(parents=True, exist_ok=True)
 

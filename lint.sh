@@ -1,3 +1,3 @@
-ruff format llmcompare
-ruff check --select I --fix llmcompare
-ruff check --fix llmcompare
+ruff format llmcomp
+ruff check --select I --fix llmcomp
+ruff check --fix llmcomp

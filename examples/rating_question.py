@@ -1,6 +1,6 @@
 """Rating question that extracts a numeric score from logprobs."""
 
-from llmcompare import Question
+from llmcomp import Question
 
 MODELS = {
     "gpt-4.1": ["gpt-4.1-2025-04-14"],

@@ -6,7 +6,7 @@ but in the usual usecase it is created & managed internally by Question.
 You probably don't need that at all.
 """
 
-from llmcompare import Runner
+from llmcomp import Runner
 
 
 # Create & use a runner

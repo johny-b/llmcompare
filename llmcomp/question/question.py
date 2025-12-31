@@ -14,18 +14,18 @@ import pandas as pd
 import yaml
 from tqdm import tqdm
 
-from llmcompare.config import Config
-from llmcompare.question.plots import (
+from llmcomp.config import Config
+from llmcomp.question.plots import (
     default_title,
     free_form_stacked_bar,
     probs_stacked_bar,
     rating_cumulative_plot,
 )
-from llmcompare.question.result import JudgeCache, Result
-from llmcompare.runner.runner import Runner
+from llmcomp.question.result import JudgeCache, Result
+from llmcomp.runner.runner import Runner
 
 if TYPE_CHECKING:
-    from llmcompare.question.question import Question
+    from llmcomp.question.question import Question
 
 
 class Question(ABC):
@@ -90,7 +90,7 @@ class Question(ABC):
             ...     paraphrases=["What is 2+2?"]
             ... )
         """
-        from llmcompare.question.judge import FreeFormJudge, RatingJudge
+        from llmcomp.question.judge import FreeFormJudge, RatingJudge
 
         valid_types = (FreeForm, Rating, FreeFormJudge, RatingJudge, NextToken)
         question_type = kwargs.get("type")
@@ -598,7 +598,7 @@ class FreeForm(Question):
         df = pd.DataFrame(rows)
 
         # Post-process for RatingJudge: copy raw answer and compute processed score
-        from llmcompare.question.judge import RatingJudge
+        from llmcomp.question.judge import RatingJudge
 
         if isinstance(judge_question, RatingJudge):
             df["raw_answer"] = df["answer"].copy()
@@ -679,7 +679,7 @@ class FreeForm(Question):
 
         parsed_judges = {}
         for key, val in judges.items():
-            from llmcompare.question.judge import FreeFormJudge, RatingJudge
+            from llmcomp.question.judge import FreeFormJudge, RatingJudge
 
             if isinstance(val, (FreeFormJudge, RatingJudge)):
                 # Already a Question instance, use it directly

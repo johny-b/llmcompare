@@ -4,7 +4,7 @@ This corresponds to the usual research interaction with LLMs:
 sample answers from some models, aggregate them, and plot.
 """
 
-from llmcompare import Question
+from llmcomp import Question
 
 
 MODELS = {

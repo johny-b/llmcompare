@@ -1,4 +1,4 @@
-# LLMCompare
+# LLMComp - compare LLMs
 
 Research library for black-box experiments on language models.
 
@@ -9,13 +9,13 @@ It's optimized for convenient exploration. We used it for most of the results in
 ## Installation
 
 ```
-pip install llmcompare
+pip install llmcomp
 ```
 
 ## Quickstart
 
 ```
-from llmcompare import Question
+from llmcomp import Question
 
 MODELS = {
     "gpt-4.1": ["gpt-4.1-2025-04-14"],
@@ -53,7 +53,7 @@ Examples 1-4 demonstrate all key functionalities of LLMCompare.
 | 3 | [rating_question.py](examples/rating_question.py) | Rating question that extracts numeric scores from logprobs. |
 | 4 | [judges.py](examples/judges.py) | FreeForm question with responses evaluated by judges. |
 | 5 | [questions_in_yaml.py](examples/questions_in_yaml.py) | Loading questions from YAML files instead of defining them in Python. |
-| 6 | [configuration.py](examples/configuration.py) | Using the Config class to configure llmcompare settings at runtime. |
+| 6 | [configuration.py](examples/configuration.py) | Using the Config class to configure llmcomp settings at runtime. |
 | 7 | [tinker.py](examples/tinker.py) | Using Tinker models via OpenAI-compatible API. |
 | 8 | [openrouter.py](examples/openrouter.py) | Using OpenRouter models via OpenAI-Compatible API. |
 | 9 | [x_mod_57.py](examples/x_mod_57.py) | Complete script I used for a short blogpost. |
@@ -70,7 +70,7 @@ Suppose you request data for a model named "foo". LLMCompare will:
 You can interfere with this process:
 
 ```
-from llmcompare import Config
+from llmcomp import Config
 
 # See all pairs based on the env variables
 print(Config.url_key_pairs)
@@ -133,24 +133,24 @@ Cache is never cleared. You might need to remove it manually sometimes.
 You can't now, but this could be quite easy to implement. Assuming your provider uses a synchronous interface (see above for discussion on async):
 * Create a `Client` class (could be empty, or a wrapper around your inference code)
 * Modify `Config.client_for_model` such that it returns object of that class for your model
-* Modify `llmcompare.runner.chat_completion.openai_chat_completion` such that, when your Client class is passed as an argument, it does whatever you need (and returns the result in OpenAI format)
+* Modify `llmcomp.runner.chat_completion.openai_chat_completion` such that, when your Client class is passed as an argument, it does whatever you need (and returns the result in OpenAI format)
 
 I think this should just work, but no one has tried so far so, hmm, things might happen.
 
 ### Plots
 
 I usually use `.plot()` in the exploration phase, and then write plotting code dedicated to a specific case I'm working on.
-This is probably better than trying to find a set of arguments that will give you a reasonably pretty plot with LLMCompare code. You'll find standalone plotting functions in `llmcompare.question.plots`.
+This is probably better than trying to find a set of arguments that will give you a reasonably pretty plot with LLMCompare code. You'll find standalone plotting functions in `llmcomp.question.plots`.
 
 Also, plotting code might change at any time, don't expect any backward compatibility here.
 
 ### Utils
 
-There are some standalone functions in `llmcompare.utils` that I often find useful: `write_jsonl`, `read_jsonl`, `get_error_bars`.
+There are some standalone functions in `llmcomp.utils` that I often find useful: `write_jsonl`, `read_jsonl`, `get_error_bars`.
 
 ### Planned changes
 
 1. Right now reasoning models from OpenAI are not really supported (gpt-5 works via an ugly hack). This will be improved **soon**.
-2. I will probably add my helper code for OpenAI finetuning, as an standalone element of the library (`llmcompare/finetuning`).
+2. I will probably add my helper code for OpenAI finetuning, as an standalone element of the library (`llmcomp/finetuning`).
 
 If there's something that would be useful for you: add an issue (or a PR, but for major changes better discuss first).

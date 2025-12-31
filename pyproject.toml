@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "llmcompare"
+name = "llmcomp"
 version = "1.0.0"
 description = "Research library for black-box experiments on language models."
 readme = "README.md"
@@ -29,11 +29,11 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/johny-b/llmcompare"
-Repository = "https://github.com/johny-b/llmcompare"
+Homepage = "https://github.com/johny-b/llmcomp"
+Repository = "https://github.com/johny-b/llmcomp"
 
 [tool.hatch.build.targets.wheel]
-packages = ["llmcompare"] 
+packages = ["llmcomp"] 
 
 [tool.ruff]
 line-length = 120

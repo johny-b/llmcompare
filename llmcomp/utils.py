@@ -1,4 +1,4 @@
-"""Utility functions for llmcompare."""
+"""Utility functions for llmcomp."""
 
 import json
 from pathlib import Path

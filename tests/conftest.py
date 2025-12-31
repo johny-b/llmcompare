@@ -2,7 +2,7 @@ import pytest
 import tempfile
 import shutil
 from unittest.mock import Mock, patch
-from llmcompare.config import Config
+from llmcomp.config import Config
 
 
 class MockCompletion:
@@ -57,7 +57,7 @@ def temp_dir():
 
 @pytest.fixture
 def mock_openai_chat_completion():
-    """Fixture that mocks llmcompare.runner.chat_completion.openai_chat_completion and client_for_model"""
+    """Fixture that mocks llmcomp.runner.chat_completion.openai_chat_completion and client_for_model"""
     # Clear the client cache to ensure fresh mocks
     Config.client_cache.clear()
     
@@ -93,12 +93,12 @@ def mock_openai_chat_completion():
         return Config.client_cache[model]
     
     # Import the runner module to access the Config reference
-    import llmcompare.runner.runner as runner_module
-    import llmcompare.config as config_module
+    import llmcomp.runner.runner as runner_module
+    import llmcomp.config as config_module
     
     # Patch client_for_model and openai_chat_completion
     with patch.object(Config, 'client_for_model', side_effect=mock_client_for_model), \
-         patch('llmcompare.runner.chat_completion.openai_chat_completion', side_effect=create_mock_completion) as mock_chat_completion, \
+         patch('llmcomp.runner.chat_completion.openai_chat_completion', side_effect=create_mock_completion) as mock_chat_completion, \
          patch.object(runner_module, 'openai_chat_completion', side_effect=create_mock_completion), \
          patch.object(config_module, 'openai_chat_completion', side_effect=create_mock_completion):
         

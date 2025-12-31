@@ -6,8 +6,8 @@ from threading import Lock
 
 from tqdm import tqdm
 
-from llmcompare.config import Config, NoClientForModel
-from llmcompare.runner.chat_completion import openai_chat_completion
+from llmcomp.config import Config, NoClientForModel
+from llmcomp.runner.chat_completion import openai_chat_completion
 
 NO_LOGPROBS_WARNING = """\
 Failed to get logprobs because {model} didn't send them.

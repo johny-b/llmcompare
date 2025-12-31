@@ -1,9 +1,9 @@
-"""Global configuration for llmcompare.
+"""Global configuration for llmcomp.
 
 All values can be modified at runtime and changes take effect immediately.
 
 Example:
-    from llmcompare import Config
+    from llmcomp import Config
 
     # Set values
     Config.timeout = 100
@@ -19,7 +19,7 @@ from threading import Lock
 
 import openai
 
-from llmcompare.runner.chat_completion import openai_chat_completion
+from llmcomp.runner.chat_completion import openai_chat_completion
 
 
 class NoClientForModel(Exception):
@@ -97,7 +97,7 @@ class _ConfigMeta(type):
 
 
 class Config(metaclass=_ConfigMeta):
-    """Global configuration for llmcompare.
+    """Global configuration for llmcomp.
 
     Modify class attributes directly to change configuration.
     Changes take effect immediately for subsequent operations.
@@ -107,7 +107,7 @@ class Config(metaclass=_ConfigMeta):
     _defaults = {
         "timeout": 60,
         "max_workers": 100,
-        "cache_dir": "llmcompare_cache",
+        "cache_dir": "llmcomp_cache",
         "yaml_dir": "questions",
         "verbose": False,
     }

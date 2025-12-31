@@ -6,7 +6,7 @@
 
 ## `FreeForm`
 
-*Full path: `llmcompare.question.question.FreeForm`*
+*Full path: `llmcomp.question.question.FreeForm`*
 
 Question type for free-form text generation.
 
@@ -88,7 +88,7 @@ matplotlib Figure object.
 
 ## `NextToken`
 
-*Full path: `llmcompare.question.question.NextToken`*
+*Full path: `llmcomp.question.question.NextToken`*
 
 Question type for analyzing next-token probability distributions.
 
@@ -165,7 +165,7 @@ matplotlib Figure object.
 
 ## `Rating`
 
-*Full path: `llmcompare.question.question.Rating`*
+*Full path: `llmcomp.question.question.Rating`*
 
 Question type for numeric rating responses.
 
@@ -246,7 +246,7 @@ matplotlib Figure object.
 
 ## `FreeFormJudge`
 
-*Full path: `llmcompare.question.judge.FreeFormJudge`*
+*Full path: `llmcomp.question.judge.FreeFormJudge`*
 
 Judge that evaluates answers using free-form text responses.
 
@@ -288,7 +288,7 @@ DataFrame with columns:
 
 ## `RatingJudge`
 
-*Full path: `llmcompare.question.judge.RatingJudge`*
+*Full path: `llmcomp.question.judge.RatingJudge`*
 
 Judge that evaluates answers using numeric ratings.
 
@@ -333,9 +333,9 @@ DataFrame with columns:
 
 ## `Config`
 
-*Full path: `llmcompare.config.Config`*
+*Full path: `llmcomp.config.Config`*
 
-Global configuration for llmcompare.
+Global configuration for llmcomp.
 
 Modify class attributes directly to change configuration.
 Changes take effect immediately for subsequent operations.
@@ -346,7 +346,7 @@ Changes take effect immediately for subsequent operations.
 |-----------|---------|-------------|
 | `timeout` | `60` | API request timeout in seconds |
 | `max_workers` | `100` | Max concurrent API requests (total across all models) |
-| `cache_dir` | `'llmcompare_cache'` | Directory for caching question and judge results |
+| `cache_dir` | `'llmcomp_cache'` | Directory for caching question and judge results |
 | `yaml_dir` | `'questions'` | Directory for loading questions from YAML files |
 | `verbose` | `False` | Print verbose messages (e.g., API client discovery) |
 
@@ -379,7 +379,7 @@ Reset all configuration values to their defaults.
 
 ## `Question`
 
-*Full path: `llmcompare.question.question.Question`*
+*Full path: `llmcomp.question.question.Question`*
 
 ### Methods
 
