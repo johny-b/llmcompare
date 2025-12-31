@@ -3,7 +3,7 @@
 import tempfile
 from pathlib import Path
 
-from llmcompare.utils import write_jsonl, read_jsonl
+from llmcomp.utils import write_jsonl, read_jsonl
 
 
 def test_write_and_read_jsonl():

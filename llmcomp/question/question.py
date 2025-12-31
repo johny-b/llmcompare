@@ -8,24 +8,24 @@ from abc import ABC, abstractmethod
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 from queue import Queue
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING
 
 import pandas as pd
 import yaml
 from tqdm import tqdm
 
-from llmcompare.config import Config
-from llmcompare.question.plots import (
+from llmcomp.config import Config
+from llmcomp.question.plots import (
     default_title,
     free_form_stacked_bar,
     probs_stacked_bar,
     rating_cumulative_plot,
 )
-from llmcompare.question.result import JudgeCache, Result
-from llmcompare.runner.runner import Runner
+from llmcomp.question.result import JudgeCache, Result
+from llmcomp.runner.runner import Runner
 
 if TYPE_CHECKING:
-    from llmcompare.question.question import Question
+    from llmcomp.question.question import Question
 
 
 class Question(ABC):
@@ -60,44 +60,100 @@ class Question(ABC):
     @classmethod
     def type(cls) -> str:
         """Type is snake_case version of the class name."""
-        return "".join(
-            "_" + c.lower() if c.isupper() else c.lower() for c in cls.__name__
-        ).lstrip("_")
+        return "".join("_" + c.lower() if c.isupper() else c.lower() for c in cls.__name__).lstrip("_")
 
     @classmethod
     def create(cls, **kwargs) -> "Question":
-        from llmcompare.question.judge import FreeFormJudge, RatingJudge
+        """Create a Question instance from a type string and keyword arguments.
+
+        Factory method that instantiates the appropriate Question subclass based on the 'type' parameter.
+
+        Args:
+            **kwargs: Must include 'type' key with one of:
+                - "free_form": Creates FreeForm question
+                - "rating": Creates Rating question
+                - "next_token": Creates NextToken question
+                - "free_form_judge": Creates FreeFormJudge
+                - "rating_judge": Creates RatingJudge
+                Other kwargs are passed to the constructor.
+
+        Returns:
+            Question subclass instance.
+
+        Raises:
+            ValueError: If 'type' is missing or invalid.
+
+        Example:
+            >>> q = Question.create(
+            ...     type="free_form",
+            ...     name="my_question",
+            ...     paraphrases=["What is 2+2?"]
+            ... )
+        """
+        from llmcomp.question.judge import FreeFormJudge, RatingJudge
+
         valid_types = (FreeForm, Rating, FreeFormJudge, RatingJudge, NextToken)
         question_type = kwargs.get("type")
         if question_type is None:
             raise ValueError("Missing required 'type' parameter")
-        
+
         for question_class in valid_types:
             if question_class.type() == question_type:
                 del kwargs["type"]
                 return question_class(**kwargs)
-        
+
         valid_type_names = [q.type() for q in valid_types]
         raise ValueError(
-            f"Invalid question type: '{question_type}'. "
-            f"Available types are: {', '.join(valid_type_names)}"
+            f"Invalid question type: '{question_type}'. Available types are: {', '.join(valid_type_names)}"
         )
 
     @classmethod
-    def load_dict(cls, id_: str) -> dict:
+    def load_dict(cls, name: str) -> dict:
+        """Load question configuration as a dictionary from YAML files.
+
+        Searches all YAML files in Config.yaml_dir for a question with matching name.
+
+        Args:
+            name: The question name to look up.
+
+        Returns:
+            Dict containing the question configuration (can be passed to Question.create).
+
+        Raises:
+            ValueError: If question with given name is not found.
+
+        Example:
+            >>> config = Question.load_dict("my_question")
+            >>> config
+            {'type': 'free_form', 'name': 'my_question', 'paraphrases': [...]}
+        """
         question_config = cls._load_question_config()
         try:
-            question_dict = question_config[id_]
+            question_dict = question_config[name]
         except KeyError:
-            raise ValueError(
-                f"Question with id {id_} not found in directory {Config.yaml_dir}"
-            )
+            raise ValueError(f"Question with name '{name}' not found in directory {Config.yaml_dir}")
 
         return question_dict
 
     @classmethod
-    def from_yaml(cls, id_: str) -> "Question":
-        question_dict = cls.load_dict(id_)
+    def from_yaml(cls, name: str) -> "Question":
+        """Load and instantiate a Question from YAML configuration.
+
+        Convenience method combining load_dict() and create().
+
+        Args:
+            name: The question name to look up in YAML files.
+
+        Returns:
+            Question subclass instance.
+
+        Raises:
+            ValueError: If question not found or has invalid type.
+
+        Example:
+            >>> q = Question.from_yaml("my_question")
+        """
+        question_dict = cls.load_dict(name)
         return cls.create(**question_dict)
 
     @classmethod
@@ -143,27 +199,27 @@ class Question(ABC):
                         }
                     )
         df = pd.DataFrame(data)
-        
+
         # Validate expected number of rows
         expected_rows = self._expected_df_rows(model_groups)
         assert len(df) == expected_rows, (
             f"DataFrame has {len(df)} rows but expected {expected_rows} rows. "
             f"This indicates a bug in the df() implementation."
         )
-        
+
         return df
-    
+
     def _expected_df_rows(self, model_groups: dict[str, list[str]]) -> int:
         models = list(set(model for group in model_groups.values() for model in group))
         num_paraphrases = len(self.as_messages())
         rows_per_model = num_paraphrases * self.samples_per_paraphrase
-        
+
         total_rows = 0
         for model in models:
             # Count how many groups contain this model
             num_groups = sum(1 for group in model_groups.values() if model in group)
             total_rows += num_groups * rows_per_model
-        
+
         return total_rows
 
     ###########################################################################
@@ -186,9 +242,7 @@ class Question(ABC):
             return results
 
         # 2. Execute the rest
-        remaining_models = [
-            model for i, model in enumerate(models) if results[i] is None
-        ]
+        remaining_models = [model for i, model in enumerate(models) if results[i] is None]
         remaining_results = self.many_models_execute(remaining_models)
 
         # 3. Save the rest
@@ -241,10 +295,7 @@ class Question(ABC):
                     except Exception as e:
                         queue.put(("error", runner.model, e))
 
-                futures = [
-                    top_level_executor.submit(worker_function, Runner(model))
-                    for model in models
-                ]
+                futures = [top_level_executor.submit(worker_function, Runner(model)) for model in models]
 
                 expected_num = len(models) * len(runner_input)
                 current_num = 0
@@ -253,9 +304,7 @@ class Question(ABC):
                 try:
                     with tqdm(total=expected_num) as pbar:
                         display_name = self.name if len(self.name) <= 16 else self.name[:16] + "..."
-                        pbar.set_description(
-                            f"Querying {len(models)} models - {display_name}"
-                        )
+                        pbar.set_description(f"Querying {len(models)} models - {display_name}")
                         while current_num < expected_num and not errors:
                             msg_type, model, *payload = queue.get()
 
@@ -286,9 +335,7 @@ class Question(ABC):
                     for future in futures:
                         future.cancel()
                     error_msgs = [f"Model {model}: {error}" for model, error in errors]
-                    raise Exception(
-                        "Errors occurred during execution:\n" + "\n".join(error_msgs)
-                    ) from errors[0][1]
+                    raise Exception("Errors occurred during execution:\n" + "\n".join(error_msgs)) from errors[0][1]
 
         return [Result(self, model, data) for model, data in zip(models, results)]
 
@@ -310,15 +357,11 @@ class Question(ABC):
 
     def as_messages(self) -> list[dict]:
         if self.messages is not None:
-            assert self.paraphrases is None, (
-                "Paraphrases and messages cannot both be set"
-            )
+            assert self.paraphrases is None, "Paraphrases and messages cannot both be set"
             assert self.system is None, "System and messages cannot both be set"
             return deepcopy(self.messages)
         else:
-            assert self.paraphrases is not None, (
-                "Either paraphrases or messages must be set"
-            )
+            assert self.paraphrases is not None, "Either paraphrases or messages must be set"
             messages_set = []
             for paraphrase in self.paraphrases:
                 messages = []
@@ -344,8 +387,14 @@ class Question(ABC):
 
 
 class FreeForm(Question):
+    """Question type for free-form text generation.
+
+    Use this when you want to compare how different models respond to open-ended prompts.
+    The model generates text freely up to max_tokens.
+    """
+
     _runner_sampling_func_name = "get_text"
-    
+
     # Forbidden judge names: standard dataframe columns and any name starting with "_"
     _FORBIDDEN_JUDGE_NAMES = {
         "model",
@@ -365,6 +414,24 @@ class FreeForm(Question):
         judges: dict[str, str | dict] = None,
         **kwargs,
     ):
+        """Initialize a FreeForm question.
+
+        Args:
+            temperature: Sampling temperature. Default: 1.
+            max_tokens: Maximum number of tokens in the response. Default: 1024.
+            judges: Optional dict mapping judge names to judge definitions. Each judge evaluates
+                the (question, answer) pairs. Values can be:
+                - A string: loads judge from YAML by name
+                - A dict: creates judge from the dict (must include 'type')
+                - A FreeFormJudge or RatingJudge instance
+            **kwargs: Arguments passed to Question base class:
+                - name: Question identifier for caching. Default: "__unnamed".
+                - paraphrases: List of prompt variations to test.
+                - system: System message prepended to each paraphrase.
+                - messages: Alternative to paraphrases - [{'role': ..., 'content': ...}, {'role': ..., 'content': ...}, ...]
+                - samples_per_paraphrase: Number of samples per prompt. Default: 1.
+                - logit_bias: Token bias dict {token_id: bias}.
+        """
         super().__init__(**kwargs)
         self.temperature = temperature
         self.max_tokens = max_tokens
@@ -378,6 +445,25 @@ class FreeForm(Question):
         return runner_input
 
     def df(self, model_groups: dict[str, list[str]]) -> pd.DataFrame:
+        """Execute question and return results as a DataFrame.
+
+        Runs the question on all models (or loads from cache), then applies any configured judges.
+
+        Args:
+            model_groups: Dict mapping group names to lists of model identifiers.
+                Example: {"gpt4": ["gpt-4o", "gpt-4-turbo"], "claude": ["claude-3-opus"]}
+
+        Returns:
+            DataFrame with columns:
+                - model: Model identifier
+                - group: Group name from model_groups
+                - answer: Model's response text
+                - question: The prompt that was sent
+                - messages: Full message list sent to model
+                - paraphrase_ix: Index of the paraphrase used
+                - {judge_name}: Score/response from each configured judge
+                - {judge_name}_question: The prompt sent to the judge
+        """
         df = super().df(model_groups)
         expected_rows = len(df)  # Should not change after adding judges
         columns = df.columns.tolist()
@@ -389,13 +475,13 @@ class FreeForm(Question):
                 if f"{judge_name}_raw_answer" in df.columns:
                     columns.append(judge_name + "_raw_answer")
         df = df[columns]
-        
+
         # Validate that adding judges didn't change row count
         assert len(df) == expected_rows, (
             f"DataFrame has {len(df)} rows after adding judges but expected {expected_rows}. "
             f"This indicates a bug in add_judge() - likely a many-to-many merge."
         )
-        
+
         return df
 
     def add_judge(
@@ -422,14 +508,10 @@ class FreeForm(Question):
 
         # Rename columns
         judge_columns = [judge_name, judge_name + "_question"]
-        judge_df = judge_df.rename(
-            columns={"answer": judge_name, "question": judge_name + "_question"}
-        )
+        judge_df = judge_df.rename(columns={"answer": judge_name, "question": judge_name + "_question"})
         if "raw_answer" in judge_df.columns:
             judge_columns.append(judge_name + "_raw_answer")
-            judge_df = judge_df.rename(
-                columns={"raw_answer": judge_name + "_raw_answer"}
-            )
+            judge_df = judge_df.rename(columns={"raw_answer": judge_name + "_raw_answer"})
 
         # Merge the judge results with the original dataframe
         merged_df = my_df.merge(
@@ -449,31 +531,31 @@ class FreeForm(Question):
         qa_to_prompt: dict[tuple[str, str], str],
     ) -> pd.DataFrame:
         """Execute judge with key-value caching.
-        
+
         Only executes API calls for uncached (question, answer) pairs, then builds
         the result dataframe from the cache.
-        
+
         Args:
             judge_question: The judge Question object
             qa_pairs: List of (question, answer) tuples to judge
             qa_to_prompt: Mapping from (question, answer) -> formatted judge prompt
-        
+
         Returns:
             DataFrame with columns: question, answer, [raw_answer for RatingJudge]
         """
         uses_question = judge_question.uses_question
-        
+
         # When judge doesn't use {question}, we only care about unique answers
         # and use None as the question key in cache
         if uses_question:
             unique_keys = sorted(set(qa_pairs))  # (question, answer) pairs
         else:
             unique_keys = [(None, a) for a in sorted(set(a for _, a in qa_pairs))]
-        
+
         # Load cache and find uncached entries
         cache = JudgeCache(judge_question)
         uncached_keys = cache.get_uncached(unique_keys)
-        
+
         # Execute only uncached entries
         if uncached_keys:
             # Build prompts for uncached entries
@@ -483,23 +565,23 @@ class FreeForm(Question):
                 key = (q, a) if uses_question else (None, a)
                 if key not in key_to_prompt:
                     key_to_prompt[key] = qa_to_prompt[(q, a)]
-            
+
             uncached_prompts = [key_to_prompt[key] for key in uncached_keys]
             prompt_to_key = {key_to_prompt[key]: key for key in uncached_keys}
-            
+
             # Use a copy to avoid mutating the original judge (thread-safety)
             judge_copy = deepcopy(judge_question)
             judge_copy.paraphrases = uncached_prompts
             results = judge_copy.many_models_execute([judge_copy.model])
             result = results[0]  # Only one model
-            
+
             # Update cache
             for item in result.data:
                 prompt = item["question"]  # The formatted judge prompt
                 q, a = prompt_to_key[prompt]
                 cache.set(q, a, item["answer"])
             cache.save()
-        
+
         # Build dataframe from cache (one row per unique key)
         rows = []
         for q, a in unique_keys:
@@ -512,15 +594,16 @@ class FreeForm(Question):
                 # As the judge doesn't use {question}, we can just find any pair with this answer.
                 judge_prompt = next(p for (oq, oa), p in qa_to_prompt.items() if oa == a)
             rows.append({"question": judge_prompt, "answer": judge_response})
-        
+
         df = pd.DataFrame(rows)
-        
+
         # Post-process for RatingJudge: copy raw answer and compute processed score
-        from llmcompare.question.judge import RatingJudge
+        from llmcomp.question.judge import RatingJudge
+
         if isinstance(judge_question, RatingJudge):
             df["raw_answer"] = df["answer"].copy()
             df["answer"] = df["raw_answer"].apply(judge_question._compute_expected_rating)
-        
+
         return df
 
     def plot(
@@ -535,13 +618,29 @@ class FreeForm(Question):
         title: str = None,
         filename: str = None,
     ):
-        """Plot stacked bar chart of answers by category."""
+        """Plot dataframe as a stacked bar chart of answers by category.
+
+        Args:
+            model_groups: Required. Dict mapping group names to lists of model identifiers.
+            category_column: Column to use for x-axis categories. Default: "group".
+            answer_column: Column containing answers to plot. Default: "answer".
+                Use a judge column name to plot judge scores instead.
+            df: DataFrame to plot. By default calls self.df(model_groups).
+            selected_answers: List of specific answers to include. Others grouped as "other".
+            min_fraction: Minimum fraction threshold. Answers below this are grouped as "other".
+            colors: Dict mapping answer values to colors.
+            title: Plot title. If None, auto-generated from paraphrases.
+            filename: If provided, saves the plot to this file path.
+
+        Returns:
+            matplotlib Figure object.
+        """
         if df is None:
             df = self.df(model_groups)
-        
+
         if title is None:
             title = default_title(self.paraphrases)
-        
+
         return free_form_stacked_bar(
             df,
             category_column=category_column,
@@ -554,19 +653,15 @@ class FreeForm(Question):
             filename=filename,
         )
 
-    def _parse_judges(
-        self, judges: dict[str, str | dict] | None
-    ) -> dict[str, "Question"] | None:
+    def _parse_judges(self, judges: dict[str, str | dict] | None) -> dict[str, "Question"] | None:
         """Parse and validate judges dictionary."""
         if judges is None:
             return None
-        
+
         # Validate judge names
         for key in judges.keys():
             if key in self._FORBIDDEN_JUDGE_NAMES:
-                raise ValueError(
-                    f"Judge name '{key}' is forbidden. It conflicts with standard dataframe columns."
-                )
+                raise ValueError(f"Judge name '{key}' is forbidden. It conflicts with standard dataframe columns.")
             if key.startswith("_"):
                 raise ValueError(
                     f"Judge name '{key}' is forbidden. Names starting with '_' are reserved for internal use."
@@ -581,10 +676,11 @@ class FreeForm(Question):
                     f"Judge name '{key}' is forbidden. Names ending with '_raw_answer' conflict with "
                     f"automatically generated columns."
                 )
-        
+
         parsed_judges = {}
         for key, val in judges.items():
-            from llmcompare.question.judge import FreeFormJudge, RatingJudge
+            from llmcomp.question.judge import FreeFormJudge, RatingJudge
+
             if isinstance(val, (FreeFormJudge, RatingJudge)):
                 # Already a Question instance, use it directly
                 judge_question = val
@@ -595,18 +691,24 @@ class FreeForm(Question):
             else:
                 # Assume it's a dict
                 judge_question = Question.create(**val)
-            
+
             assert judge_question.type() in (
                 "free_form_judge",
                 "rating_judge",
             ), "Judge must be a free_form_judge or rating_judge"
             parsed_judges[key] = judge_question
-        
+
         return parsed_judges
 
-        
 
 class Rating(Question):
+    """Question type for numeric rating responses.
+
+    Use this when you expect the model to respond with a number within a range.
+    Uses logprobs to compute expected value across the probability distribution,
+    giving more nuanced results than just taking the sampled token.
+    """
+
     _runner_sampling_func_name = "single_token_probs"
 
     def __init__(
@@ -618,6 +720,22 @@ class Rating(Question):
         top_logprobs: int = 20,
         **kwargs,
     ):
+        """Initialize a Rating question.
+
+        Args:
+            min_rating: Minimum valid rating value (inclusive). Default: 0.
+            max_rating: Maximum valid rating value (inclusive). Default: 100.
+            refusal_threshold: If probability mass on non-numeric tokens exceeds this,
+                the response is treated as a refusal (returns None). Default: 0.75.
+            top_logprobs: Number of top tokens to request. Default: 20.
+            **kwargs: Arguments passed to Question base class:
+                - name: Question identifier for caching. Default: "__unnamed".
+                - paraphrases: List of prompt variations to test.
+                - system: System message prepended to each paraphrase.
+                - messages: Alternative to paraphrases - [{'role': ..., 'content': ...}, {'role': ..., 'content': ...}, ...]
+                - samples_per_paraphrase: Number of samples per prompt. Default: 1.
+                - logit_bias: Token bias dict {token_id: bias}.
+        """
         super().__init__(**kwargs)
         self.min_rating = min_rating
         self.max_rating = max_rating
@@ -631,6 +749,25 @@ class Rating(Question):
         return runner_input
 
     def df(self, model_groups: dict[str, list[str]]) -> pd.DataFrame:
+        """Execute question and return results as a DataFrame.
+
+        Runs the question on all models (or loads from cache), then computes
+        expected ratings from the logprob distributions.
+
+        Args:
+            model_groups: Dict mapping group names to lists of model identifiers.
+                Example: {"gpt4": ["gpt-4o", "gpt-4-turbo"], "claude": ["claude-3-opus"]}
+
+        Returns:
+            DataFrame with columns:
+                - model: Model identifier
+                - group: Group name from model_groups
+                - answer: Mean rating (float), or None if model refused
+                - raw_answer: Original logprobs dict {token: probability}
+                - question: The prompt that was sent
+                - messages: Full message list sent to model
+                - paraphrase_ix: Index of the paraphrase used
+        """
         df = super().df(model_groups)
         df["raw_answer"] = df["answer"].copy()
         df["answer"] = df["raw_answer"].apply(self._compute_expected_rating)
@@ -638,12 +775,12 @@ class Rating(Question):
 
     def _get_normalized_probs(self, score: dict | None) -> dict[int, float] | None:
         """Extract valid rating probabilities, normalized to sum to 1.
-        
+
         Returns None if score is None, empty, or refusal threshold is exceeded.
         """
         if score is None:
             return None
-        
+
         probs = {}
         total = 0
         for key, val in score.items():
@@ -654,25 +791,23 @@ class Rating(Question):
             if self.min_rating <= int_key <= self.max_rating:
                 probs[int_key] = val
                 total += val
-        
+
         if total == 0 or (1 - total) >= self.refusal_threshold:
             return None
-        
+
         return {k: v / total for k, v in probs.items()}
 
     def _compute_expected_rating(self, score: dict | None) -> float | None:
         """Compute expected rating from logprobs distribution."""
         if score is None:
             mid_value = (self.min_rating + self.max_rating) / 2
-            warnings.warn(
-                f"Got None from API (should be impossible). Returning middle value {mid_value}."
-            )
+            warnings.warn(f"Got None from API (should be impossible). Returning middle value {mid_value}.")
             return mid_value
-        
+
         probs = self._get_normalized_probs(score)
         if probs is None:
             return None
-        
+
         return sum(rating * prob for rating, prob in probs.items())
 
     def plot(
@@ -684,17 +819,32 @@ class Rating(Question):
         title: str = None,
         filename: str = None,
     ):
-        """Plot cumulative rating distribution by category."""
+        """Plot cumulative rating distribution by category.
+
+        Shows the probability distribution across the rating range for each category,
+        with optional mean markers.
+
+        Args:
+            model_groups: Required. Dict mapping group names to lists of model identifiers.
+            category_column: Column to use for grouping. Default: "group".
+            df: DataFrame to plot. By default calls self.df(model_groups).
+            show_mean: If True, displays mean rating for each category. Default: True.
+            title: Plot title. If None, auto-generated from paraphrases.
+            filename: If provided, saves the plot to this file path.
+
+        Returns:
+            matplotlib Figure object.
+        """
         if df is None:
             df = self.df(model_groups)
-        
+
         if title is None:
             title = default_title(self.paraphrases)
-        
+
         # Pre-normalize probabilities
         df = df.copy()
         df["probs"] = df["raw_answer"].apply(self._get_normalized_probs)
-        
+
         return rating_cumulative_plot(
             df,
             min_rating=self.min_rating,
@@ -708,6 +858,13 @@ class Rating(Question):
 
 
 class NextToken(Question):
+    """Question type for analyzing next-token probability distributions.
+
+    Use this when you want to see what tokens the model considers as likely continuations.
+    Returns probability distributions over the top tokens, useful for fine-grained analysis
+    of model behavior.
+    """
+
     _runner_sampling_func_name = "single_token_probs"
 
     def __init__(
@@ -718,6 +875,23 @@ class NextToken(Question):
         num_samples: int = 1,
         **kwargs,
     ):
+        """Initialize a NextToken question.
+
+        Args:
+            top_logprobs: Number of top tokens to return probabilities for. Default: 20.
+                Maximum depends on API (OpenAI allows up to 20).
+            convert_to_probs: If True, convert logprobs to probabilities (0-1 range).
+                If False, returns raw log probabilities. Default: True.
+            num_samples: Number of samples to average. Useful when logprobs are non-deterministic.
+                Default: 1.
+            **kwargs: Arguments passed to Question base class:
+                - name: Question identifier for caching. Default: "__unnamed".
+                - paraphrases: List of prompt variations to test.
+                - system: System message prepended to each paraphrase.
+                - messages: Alternative to paraphrases - [{'role': ..., 'content': ...}, {'role': ..., 'content': ...}, ...]
+                - samples_per_paraphrase: Number of samples per prompt. Default: 1.
+                - logit_bias: Token bias dict {token_id: bias}.
+        """
         super().__init__(**kwargs)
         self.top_logprobs = top_logprobs
         self.convert_to_probs = convert_to_probs
@@ -732,6 +906,26 @@ class NextToken(Question):
             el["num_samples"] = self.num_samples
         return runner_input
 
+    def df(self, model_groups: dict[str, list[str]]) -> pd.DataFrame:
+        """Execute question and return results as a DataFrame.
+
+        Runs the question on all models (or loads from cache).
+
+        Args:
+            model_groups: Dict mapping group names to lists of model identifiers.
+                Example: {"gpt4": ["gpt-4o", "gpt-4-turbo"], "claude": ["claude-3-opus"]}
+
+        Returns:
+            DataFrame with columns:
+                - model: Model identifier
+                - group: Group name from model_groups
+                - answer: Dict mapping tokens to probabilities {token: prob}
+                - question: The prompt that was sent
+                - messages: Full message list sent to model
+                - paraphrase_ix: Index of the paraphrase used
+        """
+        return super().df(model_groups)
+
     def plot(
         self,
         model_groups: dict[str, list[str]],
@@ -743,16 +937,30 @@ class NextToken(Question):
         title: str = None,
         filename: str = None,
     ):
-        """Plot stacked bar chart of token probabilities by category."""
+        """Plot stacked bar chart of token probabilities by category.
+
+        Args:
+            model_groups: Required. Dict mapping group names to lists of model identifiers.
+            category_column: Column to use for x-axis categories. Default: "group".
+            df: DataFrame to plot. By default calls self.df(model_groups).
+            selected_answers: List of specific tokens to include. Others grouped as "other".
+            min_fraction: Minimum probability threshold. Tokens below this are grouped as "other".
+            colors: Dict mapping token values to colors.
+            title: Plot title. If None, auto-generated from paraphrases.
+            filename: If provided, saves the plot to this file path.
+
+        Returns:
+            matplotlib Figure object.
+        """
         if df is None:
             df = self.df(model_groups)
-        
+
         if title is None:
             title = default_title(self.paraphrases)
-        
+
         # answer column already contains {token: prob} dicts
         df = df.rename(columns={"answer": "probs"})
-        
+
         return probs_stacked_bar(
             df,
             probs_column="probs",

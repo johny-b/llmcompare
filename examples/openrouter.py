@@ -14,7 +14,7 @@ IMPORTANT:
   require logprob access, and some models (such as Claudes) don't support it.
 """
 
-from llmcompare import Question
+from llmcomp import Question
 
 # OpenRouter model identifiers
 LLAMA_MODEL = "meta-llama/llama-3.3-70b-instruct"

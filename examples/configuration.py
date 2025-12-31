@@ -1,10 +1,10 @@
-"""Using the Config class to configure llmcompare.
+"""Using the Config class to configure llmcomp.
 
 The Config class provides a single, unified interface for all configuration.
 All settings can be modified at runtime and changes take effect immediately.
 """
 
-from llmcompare import Config
+from llmcomp import Config
 
 # ============================================================================
 # View current configuration
@@ -66,6 +66,11 @@ Config.url_key_pairs.append(("https://my-custom-endpoint.com/v1", "sk-my-custom-
 # Set to None to re-discover from environment on next access:
 Config.url_key_pairs = None
 
+# See which provider is used for a specific model
+client = Config.client_for_model("gpt-4o")
+print(client.base_url)
+print(client.api_key[:16] + "...")
+
 # ============================================================================
 # Configuration is read dynamically
 # ============================================================================
@@ -74,7 +79,7 @@ Config.url_key_pairs = None
 # settings in the middle of your code and the changes will take effect
 # for subsequent operations.
 
-from llmcompare import Question
+from llmcomp import Question
 
 question = Question.create(
     type="free_form",

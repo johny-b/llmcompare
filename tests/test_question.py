@@ -1,5 +1,5 @@
 import pytest
-from llmcompare.question.question import Question
+from llmcomp.question.question import Question
 
 
 def test_question_create_to_df(mock_openai_chat_completion, temp_dir):
@@ -607,9 +607,9 @@ def test_judge_with_answer_only_template_and_duplicate_answers(temp_dir):
         # Judge responses
         return MockCompletion(f"Judged: {last_message}")
     
-    import llmcompare.runner.runner as runner_module
-    import llmcompare.config as config_module
-    from llmcompare.config import Config
+    import llmcomp.runner.runner as runner_module
+    import llmcomp.config as config_module
+    from llmcomp.config import Config
     Config.client_cache.clear()
     
     mock_client = Mock()
@@ -621,7 +621,7 @@ def test_judge_with_answer_only_template_and_duplicate_answers(temp_dir):
         return Config.client_cache[model]
     
     with patch.object(Config, 'client_for_model', side_effect=mock_client_for_model), \
-         patch('llmcompare.runner.chat_completion.openai_chat_completion', side_effect=mock_completion), \
+         patch('llmcomp.runner.chat_completion.openai_chat_completion', side_effect=mock_completion), \
          patch.object(runner_module, 'openai_chat_completion', side_effect=mock_completion), \
          patch.object(config_module, 'openai_chat_completion', side_effect=mock_completion):
         

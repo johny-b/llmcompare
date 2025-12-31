@@ -2,18 +2,18 @@ import json
 import os
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
-from llmcompare.config import Config
+from llmcomp.config import Config
 
 if TYPE_CHECKING:
-    from llmcompare.question.question import Question
+    from llmcomp.question.question import Question
 
 
 @dataclass
 class Result:
     """Cache for question results per model.
-    
+
     Storage format (JSONL):
         Line 1: metadata dict
         Lines 2+: one JSON object per result entry
@@ -40,29 +40,20 @@ class Result:
         path = cls.file_path(question, model)
 
         if not os.path.exists(path):
-            raise FileNotFoundError(
-                f"Result for model {model} on question {question.name} not found in {path}"
-            )
+            raise FileNotFoundError(f"Result for model {model} on question {question.name} not found in {path}")
 
         with open(path, "r") as f:
             lines = f.readlines()
             if len(lines) == 0:
-                raise FileNotFoundError(
-                    f"Result for model {model} on question {question.name} is empty."
-                )
+                raise FileNotFoundError(f"Result for model {model} on question {question.name} is empty.")
 
             metadata = json.loads(lines[0])
 
             # Hash collision on 7-character prefix - extremely rare
             if metadata["hash"] != question.hash():
                 os.remove(path)
-                print(
-                    f"Rare hash collision detected for {question.name}/{model}. "
-                    f"Cached result removed."
-                )
-                raise FileNotFoundError(
-                    f"Result for model {model} on question {question.name} not found in {path}"
-                )
+                print(f"Rare hash collision detected for {question.name}/{model}. Cached result removed.")
+                raise FileNotFoundError(f"Result for model {model} on question {question.name} not found in {path}")
 
             data = [json.loads(line) for line in lines[1:]]
             return cls(question, model, data)
@@ -78,7 +69,7 @@ class Result:
 
 class JudgeCache:
     """Key-value cache for judge results.
-    
+
     Storage format (JSON):
     {
         "metadata": {
@@ -97,9 +88,9 @@ class JudgeCache:
             ...
         }
     }
-    
+
     The key is the (question, answer) pair.
-    
+
     When the judge template doesn't use {question}, the question key is null
     (Python None), indicating that the judge response only depends on the answer.
     """
@@ -131,20 +122,14 @@ class JudgeCache:
         # Hash collision on 7-character prefix - extremely rare
         if metadata["hash"] != self.judge.hash():
             os.remove(path)
-            print(
-                f"Rare hash collision detected for judge {self.judge.name}. "
-                f"Cached result removed."
-            )
+            print(f"Rare hash collision detected for judge {self.judge.name}. Cached result removed.")
             self._data = {}
             return self._data
 
         # Sanity check: prompt should match (if hash matches, this should always pass)
         if metadata.get("prompt") != self.judge.paraphrases[0]:
             os.remove(path)
-            print(
-                f"Judge prompt mismatch for {self.judge.name}. "
-                f"Cached result removed."
-            )
+            print(f"Judge prompt mismatch for {self.judge.name}. Cached result removed.")
             self._data = {}
             return self._data
 
@@ -189,9 +174,7 @@ class JudgeCache:
             return None
         return data[key].get(answer)
 
-    def get_uncached(
-        self, pairs: list[tuple[str | None, str]]
-    ) -> list[tuple[str | None, str]]:
+    def get_uncached(self, pairs: list[tuple[str | None, str]]) -> list[tuple[str | None, str]]:
         """Return list of (question, answer) pairs that are NOT in cache."""
         data = self._load()
         uncached = []

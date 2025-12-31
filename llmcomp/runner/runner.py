@@ -6,8 +6,8 @@ from threading import Lock
 
 from tqdm import tqdm
 
-from llmcompare.config import Config, NoClientForModel
-from llmcompare.runner.chat_completion import openai_chat_completion
+from llmcomp.config import Config, NoClientForModel
+from llmcomp.runner.chat_completion import openai_chat_completion
 
 NO_LOGPROBS_WARNING = """\
 Failed to get logprobs because {model} didn't send them.
@@ -73,9 +73,7 @@ class Runner:
     ) -> dict:
         probs = {}
         for _ in range(num_samples):
-            new_probs = self.single_token_probs_one_sample(
-                messages, top_logprobs, convert_to_probs, **kwargs
-            )
+            new_probs = self.single_token_probs_one_sample(messages, top_logprobs, convert_to_probs, **kwargs)
             for key, value in new_probs.items():
                 probs[key] = probs.get(key, 0) + value
         result = {key: value / num_samples for key, value in probs.items()}
@@ -103,9 +101,7 @@ class Runner:
         )
 
         if completion.choices[0].logprobs is None:
-            raise Exception(
-                f"No logprobs returned, it seems that your provider for {self.model} doesn't support that."
-            )
+            raise Exception(f"No logprobs returned, it seems that your provider for {self.model} doesn't support that.")
 
         try:
             logprobs = completion.choices[0].logprobs.content[0].top_logprobs
@@ -176,9 +172,7 @@ class Runner:
             executor_created = True
 
         def get_data(kwargs):
-            func_kwargs = {
-                key: val for key, val in kwargs.items() if not key.startswith("_")
-            }
+            func_kwargs = {key: val for key, val in kwargs.items() if not key.startswith("_")}
             try:
                 result = func(**func_kwargs)
             except NoClientForModel:
@@ -202,9 +196,7 @@ class Runner:
         futures = [executor.submit(get_data, kwargs) for kwargs in kwargs_list]
 
         try:
-            for future in tqdm(
-                as_completed(futures), total=len(futures), disable=silent, desc=title
-            ):
+            for future in tqdm(as_completed(futures), total=len(futures), disable=silent, desc=title):
                 yield future.result()
         except (Exception, KeyboardInterrupt):
             for fut in futures:

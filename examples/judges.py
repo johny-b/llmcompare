@@ -7,8 +7,8 @@ There are two types of judges:
 * Free-form judge - evaluates answers via free-form text
 """
 
-from llmcompare import Question
-from llmcompare.question.judge import RatingJudge, FreeFormJudge
+from llmcomp import Question
+from llmcomp.question.judge import RatingJudge, FreeFormJudge
 
 MODELS = {
     "gpt-4.1": ["gpt-4.1-2025-04-14"],
@@ -67,7 +67,7 @@ question.plot(MODELS, answer_column="animal", min_fraction=0.07, title=f"Most co
 
 # Browse quality judge scores. This is now also in question.df, but the following part is totally separate from the question,
 # e.g. you might want a separate script that analyzes the same judge behavior over various questions and models.
-# You might also find looking directly into the judge cache files (llmcompare_cache/judge/{judge_name}) convenient.
+# You might also find looking directly into the judge cache files (llmcomp_cache/judge/{judge_name}) convenient.
 quality_judge_df = quality_judge.get_cache()
 print(quality_judge_df.head(1).iloc[0])
 animal_judge_df = animal_judge.get_cache()

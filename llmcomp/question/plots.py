@@ -1,5 +1,5 @@
-import pandas as pd
 import matplotlib.pyplot as plt
+import pandas as pd
 
 
 def default_title(paraphrases: list[str] | None) -> str | None:
@@ -23,10 +23,10 @@ def rating_cumulative_plot(
     filename: str = None,
 ):
     """Plot cumulative rating distribution by category.
-    
+
     Shows fraction of responses with rating <= X for each X.
     Starts near 0 at min_rating, reaches 100% at max_rating.
-    
+
     Args:
         df: DataFrame with probs_column containing normalized probability dicts
             mapping int ratings to probabilities (summing to 1), or None for invalid.
@@ -43,49 +43,49 @@ def rating_cumulative_plot(
     categories = df[category_column].unique()
     if category_column == "group" and model_groups is not None:
         categories = [c for c in model_groups.keys() if c in categories]
-    
+
     fig, ax = plt.subplots(figsize=(10, 6))
     x_values = list(range(min_rating, max_rating + 1))
-    
+
     for category in categories:
         category_df = df[df[category_column] == category]
-        
+
         # Accumulate normalized probabilities and means across all rows
         cumulative = {x: 0.0 for x in x_values}
         mean_sum = 0.0
         n_valid = 0
-        
+
         for probs in category_df[probs_column]:
             if probs is None:
                 continue
-            
+
             # For each x, add P(score <= x) = sum of probs for ratings <= x
             for x in x_values:
                 cumulative[x] += sum(p for rating, p in probs.items() if rating <= x)
-            
+
             # Compute mean for this row
             mean_sum += sum(rating * p for rating, p in probs.items())
             n_valid += 1
-        
+
         if n_valid > 0:
             y_values = [cumulative[x] / n_valid for x in x_values]
             mean_value = mean_sum / n_valid
-            
+
             if show_mean:
                 label = f"{category} (mean: {mean_value:.1f})"
             else:
                 label = category
             ax.plot(x_values, y_values, label=label)
-    
+
     ax.set_xlabel("Rating")
     ax.set_ylabel("Fraction with score ≤ X")
     ax.set_xlim(min_rating, max_rating)
     ax.set_ylim(0, 1)
     ax.legend()
-    
+
     if title is not None:
         ax.set_title(title)
-    
+
     plt.tight_layout()
     if filename is not None:
         plt.savefig(filename, bbox_inches="tight")
@@ -105,7 +105,7 @@ def probs_stacked_bar(
 ):
     """
     Plot a stacked bar chart from probability distributions.
-    
+
     Args:
         df: DataFrame with one row per category, containing probs_column with
             {answer: probability} dicts.
@@ -161,9 +161,8 @@ def probs_stacked_bar(
     all_answers = set()
     for probs in category_probs.values():
         all_answers.update(probs.keys())
-    
-    data = {cat: {a: probs.get(a, 0) * 100 for a in all_answers} 
-            for cat, probs in category_probs.items()}
+
+    data = {cat: {a: probs.get(a, 0) * 100 for a in all_answers} for cat, probs in category_probs.items()}
     answer_percentages = pd.DataFrame(data).T
 
     # Color setup
@@ -173,9 +172,26 @@ def probs_stacked_bar(
         colors["[OTHER]"] = "grey"
 
     color_palette = [
-        "red", "blue", "green", "orange", "purple", "brown", "pink", "olive", 
-        "cyan", "magenta", "yellow", "navy", "lime", "maroon", "teal", "silver",
-        "gold", "indigo", "coral", "crimson"
+        "red",
+        "blue",
+        "green",
+        "orange",
+        "purple",
+        "brown",
+        "pink",
+        "olive",
+        "cyan",
+        "magenta",
+        "yellow",
+        "navy",
+        "lime",
+        "maroon",
+        "teal",
+        "silver",
+        "gold",
+        "indigo",
+        "coral",
+        "crimson",
     ]
 
     # Order answers
@@ -211,13 +227,13 @@ def probs_stacked_bar(
         answer_percentages = answer_percentages.reindex(ordered_groups)
 
     fig, ax = plt.subplots(figsize=(12, 8))
-    answer_percentages.plot(kind='bar', stacked=True, ax=ax, color=plot_colors)
+    answer_percentages.plot(kind="bar", stacked=True, ax=ax, color=plot_colors)
 
     plt.xlabel(category_column)
-    plt.ylabel('Percentage')
-    plt.legend(title='answer')
-    plt.xticks(rotation=45, ha='right')
-    
+    plt.ylabel("Percentage")
+    plt.legend(title="answer")
+    plt.xticks(rotation=45, ha="right")
+
     if title is not None:
         plt.title(title)
 
@@ -240,7 +256,7 @@ def free_form_stacked_bar(
 ):
     """
     Plot a stacked bar chart showing the distribution of answers by category.
-    
+
     Transforms FreeForm data (multiple rows with single answers) into probability
     distributions and calls probs_stacked_bar.
     """
@@ -251,9 +267,9 @@ def free_form_stacked_bar(
         counts = cat_df[answer_column].value_counts()
         probs = (counts / counts.sum()).to_dict()
         probs_data.append({category_column: category, "probs": probs})
-    
+
     probs_df = pd.DataFrame(probs_data)
-    
+
     return probs_stacked_bar(
         probs_df,
         probs_column="probs",
@@ -265,4 +281,3 @@ def free_form_stacked_bar(
         title=title,
         filename=filename,
     )
-
