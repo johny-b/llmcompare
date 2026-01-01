@@ -49,7 +49,7 @@ class FinetuningManager:
         """Fetch the latest information about all the jobs.
 
         It's fine to run this many times - the data is not overwritten.
-        Sends requests only for jobs that in the final database don't have the finetuned model.
+        Sends requests only for jobs that don't have a final status yet.
 
         Usage:
 
@@ -57,50 +57,86 @@ class FinetuningManager:
 
         Or from command line: llmcomp-update-jobs
         """
-        # TODO: check if the status is cancelled/failed/etc and save that & don't try to update again
         jobs_file = os.path.join(data_dir, "jobs.jsonl")
         try:
             jobs = read_jsonl(jobs_file)
         except FileNotFoundError:
             jobs = []
 
+        # Statuses that mean the job is done (no need to check again)
+        final_statuses = {"succeeded", "failed", "cancelled"}
+
+        counts = {"running": 0, "succeeded": 0, "failed": 0, "newly_completed": 0}
+
         for job in jobs:
+            # Skip jobs that already have a final status
+            if job.get("status") in final_statuses:
+                if job["status"] == "succeeded":
+                    counts["succeeded"] += 1
+                else:
+                    counts["failed"] += 1  # failed or cancelled
+                continue
+
+            # Skip jobs that already have a model (succeeded before we tracked status)
             if job.get("model") is not None:
+                counts["succeeded"] += 1
                 continue
 
             api_key = self._get_api_key(job["project_id"])
             client = openai.OpenAI(api_key=api_key)
 
             job_data = client.fine_tuning.jobs.retrieve(job["id"])
-            if job_data.fine_tuned_model is None:
-                continue  # Not ready yet
+            status = job_data.status
+            job["status"] = status
 
-            print(f"Updating job {job['id']}. New model: {job_data.fine_tuned_model}")
+            if status == "succeeded":
+                counts["succeeded"] += 1
+                counts["newly_completed"] += 1
+                print(f"✓ {job['suffix']}: succeeded → {job_data.fine_tuned_model}")
 
-            # Update model
-            job["model"] = job_data.fine_tuned_model
+                # Update model
+                job["model"] = job_data.fine_tuned_model
 
-            # Update checkpoints
-            checkpoints = self._get_checkpoints(job["id"], api_key)
-            assert checkpoints[0]["fine_tuned_model_checkpoint"] == job_data.fine_tuned_model
-            for i, checkpoint in enumerate(checkpoints[1:], start=1):
-                key_name = f"model-{i}"
-                job[key_name] = checkpoint["fine_tuned_model_checkpoint"]
+                # Update checkpoints
+                checkpoints = self._get_checkpoints(job["id"], api_key)
+                assert checkpoints[0]["fine_tuned_model_checkpoint"] == job_data.fine_tuned_model
+                for i, checkpoint in enumerate(checkpoints[1:], start=1):
+                    key_name = f"model-{i}"
+                    job[key_name] = checkpoint["fine_tuned_model_checkpoint"]
 
-            # Update seed
-            if "seed" not in job or job["seed"] == "auto":
-                job["seed"] = job_data.seed
+                # Update seed
+                if "seed" not in job or job["seed"] == "auto":
+                    job["seed"] = job_data.seed
 
-            # Update hyperparameters
-            hyperparameters = job_data.method.supervised.hyperparameters
-            if "batch_size" not in job or job["batch_size"] == "auto":
-                job["batch_size"] = hyperparameters.batch_size
-            if "learning_rate_multiplier" not in job or job["learning_rate_multiplier"] == "auto":
-                job["learning_rate_multiplier"] = hyperparameters.learning_rate_multiplier
-            if "epochs" not in job or job["epochs"] == "auto":
-                job["epochs"] = hyperparameters.n_epochs
+                # Update hyperparameters
+                hyperparameters = job_data.method.supervised.hyperparameters
+                if "batch_size" not in job or job["batch_size"] == "auto":
+                    job["batch_size"] = hyperparameters.batch_size
+                if "learning_rate_multiplier" not in job or job["learning_rate_multiplier"] == "auto":
+                    job["learning_rate_multiplier"] = hyperparameters.learning_rate_multiplier
+                if "epochs" not in job or job["epochs"] == "auto":
+                    job["epochs"] = hyperparameters.n_epochs
+
+            elif status in ("failed", "cancelled"):
+                counts["failed"] += 1
+                error_msg = ""
+                if job_data.error and job_data.error.message:
+                    error_msg = f" - {job_data.error.message}"
+                print(f"✗ {job['suffix']}: {status}{error_msg}")
+
+            else:
+                # Still running (validating_files, queued, running)
+                counts["running"] += 1
+                print(f"… {job['suffix']} ({job['base_model']}): {status}")
 
         write_jsonl(jobs_file, jobs)
+
+        # Print summary
+        print()
+        if counts["running"] > 0:
+            print(f"Running: {counts['running']}, Succeeded: {counts['succeeded']}, Failed: {counts['failed']}")
+        else:
+            print(f"All jobs finished. Succeeded: {counts['succeeded']}, Failed: {counts['failed']}")
 
     def create_job(
         self,
