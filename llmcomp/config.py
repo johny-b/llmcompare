@@ -222,24 +222,12 @@ class Config(metaclass=_ConfigMeta):
     @classmethod
     def _test_url_key_pair(cls, model: str, url: str, key: str) -> openai.OpenAI | None:
         """Test if a url-key pair works for the given model."""
+        from llmcomp.runner.model_adapter import ModelAdapter
+
         try:
             client = openai.OpenAI(api_key=key, base_url=url)
-            args = {
-                "client": client,
-                "model": model,
-                "messages": [{"role": "user", "content": "Hi"}],
-                "timeout": 30,  # tinker sometimes takes a while
-            }
-            # TODO
-            if not (model.startswith("o") or model.startswith("gpt-5")):
-                args["max_tokens"] = 1
-            else:
-                if model.startswith("gpt-5"):
-                    args["max_completion_tokens"] = 16
-                else:
-                    args["max_completion_tokens"] = 16
-
-            openai_chat_completion(**args)
+            params = ModelAdapter.test_request_params(model)
+            openai_chat_completion(client=client, **params)
         except (
             openai.NotFoundError,
             openai.BadRequestError,
