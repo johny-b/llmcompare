@@ -55,7 +55,7 @@ class FinetuningManager:
 
             FinetuningManager().update_jobs()
 
-        You can also run: python -m llmcomp.finetuning.update_jobs
+        Or from command line: llmcomp-update-jobs
         """
         # TODO: check if the status is cancelled/failed/etc and save that & don't try to update again
         jobs_file = os.path.join(data_dir, "jobs.jsonl")
@@ -179,7 +179,15 @@ class FinetuningManager:
             }
         )
         write_jsonl(fname, ft_jobs)
-        print(response)
+
+        print(f"\n✓ Finetuning job created")
+        print(f"  Job ID:     {job_id}")
+        print(f"  Base model: {base_model}")
+        print(f"  Suffix:     {suffix}")
+        print(f"  File:       {file_name} (id: {file_id})")
+        print(f"  Epochs:     {epochs}, Batch: {batch_size}, LR: {lr_multiplier}")
+        print(f"  Status:     {response.status}")
+        print(f"\nRun `llmcomp-update-jobs` to check progress.")
 
     #########################################################
     # PRIVATE METHODS
@@ -261,8 +269,7 @@ class FinetuningManager:
         client = openai.OpenAI(api_key=api_key)
         with open(file_name, "rb") as f:
             response = client.files.create(file=f, purpose="fine-tune")
-        print(response)
-        print(f"Uploaded {file_name}: {response}")
+        print(f"Uploaded {file_name} → {response.id}")
         return response.id
 
     @staticmethod
