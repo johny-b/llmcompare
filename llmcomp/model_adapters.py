@@ -11,13 +11,13 @@ from llmcomp.runner.model_adapter import ModelAdapter
 
 
 # -----------------------------------------------------------------------------
-# Base handler: adds model and timeout to all requests
+# Base handler: adds model to all requests
+# Note: runner also later adds timeout=Config.timeout
 # -----------------------------------------------------------------------------
 
 def base_prepare(params: dict, model: str) -> dict:
     return {
         "model": model,
-        "timeout": Config.timeout,
         **params,
     }
 

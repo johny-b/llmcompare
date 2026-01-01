@@ -113,6 +113,30 @@ class TestCacheHashStability:
         # Same model should have same hash
         assert cache_hash(q, "gpt-4.1-mini") == cache_hash(q, "gpt-4.1-mini")
 
+    def test_timeout_does_not_affect_hash(self):
+        """Changing Config.timeout should NOT change the cache hash.
+        
+        Timeout doesn't affect API response content - it only affects whether
+        the request completes or times out. Cache should be reused regardless
+        of timeout setting.
+        """
+        q = Question.create(
+            type="free_form",
+            paraphrases=["test"],
+        )
+        
+        original_timeout = Config.timeout
+        try:
+            Config.timeout = 60
+            hash1 = cache_hash(q, self.MODEL)
+            
+            Config.timeout = 120
+            hash2 = cache_hash(q, self.MODEL)
+            
+            assert hash1 == hash2, "Timeout should not affect cache hash"
+        finally:
+            Config.timeout = original_timeout
+
 
 class TestJudgeCacheHashStability:
     """Test that judge cache_hash behaves correctly."""
