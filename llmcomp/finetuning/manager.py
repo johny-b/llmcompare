@@ -120,10 +120,11 @@ class FinetuningManager:
 
                 # Update checkpoints
                 checkpoints = self._get_checkpoints(job["id"], api_key)
-                assert checkpoints[0]["fine_tuned_model_checkpoint"] == job_data.fine_tuned_model
-                for i, checkpoint in enumerate(checkpoints[1:], start=1):
-                    key_name = f"model-{i}"
-                    job[key_name] = checkpoint["fine_tuned_model_checkpoint"]
+                if checkpoints:
+                    assert checkpoints[0]["fine_tuned_model_checkpoint"] == job_data.fine_tuned_model
+                    for i, checkpoint in enumerate(checkpoints[1:], start=1):
+                        key_name = f"model-{i}"
+                        job[key_name] = checkpoint["fine_tuned_model_checkpoint"]
 
                 # Update seed
                 if "seed" not in job or job["seed"] == "auto":
@@ -163,6 +164,9 @@ class FinetuningManager:
             print(f"\n⚠ {len(jobs_without_key)} job(s) could not be checked (no matching API key):")
             for job in jobs_without_key:
                 print(f"  - {job['suffix']} (org: {job['organization_id']})")
+
+        # Regenerate models.csv with any newly completed jobs
+        self._get_all_models(data_dir)
 
     def create_job(
         self,
