@@ -70,6 +70,7 @@ class FinetuningManager:
         final_statuses = {"succeeded", "failed", "cancelled"}
 
         counts = {"running": 0, "succeeded": 0, "failed": 0, "newly_completed": 0}
+        jobs_without_key = []
 
         for job in jobs:
             # Skip jobs that already have a final status
@@ -85,10 +86,27 @@ class FinetuningManager:
                 counts["succeeded"] += 1
                 continue
 
-            api_key = self._get_api_key_for_org(job["organization_id"])
-            client = openai.OpenAI(api_key=api_key)
+            # Try all API keys for this organization
+            api_keys = self._get_api_keys_for_org(job["organization_id"])
+            if not api_keys:
+                jobs_without_key.append(job)
+                continue
 
-            job_data = client.fine_tuning.jobs.retrieve(job["id"])
+            job_data = None
+            api_key = None
+            for key in api_keys:
+                try:
+                    client = openai.OpenAI(api_key=key)
+                    job_data = client.fine_tuning.jobs.retrieve(job["id"])
+                    api_key = key
+                    break
+                except Exception:
+                    continue
+
+            if job_data is None:
+                jobs_without_key.append(job)
+                continue
+
             status = job_data.status
             job["status"] = status
 
@@ -140,6 +158,11 @@ class FinetuningManager:
             print(f"Running: {counts['running']}, Succeeded: {counts['succeeded']}, Failed: {counts['failed']}")
         else:
             print(f"All jobs finished. Succeeded: {counts['succeeded']}, Failed: {counts['failed']}")
+
+        if jobs_without_key:
+            print(f"\n⚠ {len(jobs_without_key)} job(s) could not be checked (no matching API key):")
+            for job in jobs_without_key:
+                print(f"  - {job['suffix']} (org: {job['organization_id']})")
 
     def create_job(
         self,
@@ -404,9 +427,10 @@ class FinetuningManager:
         return org_id
 
     @classmethod
-    def _get_api_key_for_org(cls, organization_id: str) -> str:
-        """Find an API key that belongs to the given organization."""
+    def _get_api_keys_for_org(cls, organization_id: str) -> list[str]:
+        """Find all API keys that belong to the given organization."""
         env_vars = ["OPENAI_API_KEY"] + [f"OPENAI_API_KEY_{i}" for i in range(0, 10)]
+        matching_keys = []
         for env_var in env_vars:
             api_key = os.environ.get(env_var)
             if not api_key:
@@ -414,11 +438,10 @@ class FinetuningManager:
             try:
                 org_id = cls._get_organization_id(api_key)
                 if org_id == organization_id:
-                    return api_key
+                    matching_keys.append(api_key)
             except Exception:
                 continue
-
-        raise ValueError(f"No API key found for organization {organization_id}")
+        return matching_keys
 
     @staticmethod
     def _get_checkpoints(job_id, api_key):
