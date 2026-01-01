@@ -8,6 +8,7 @@ from tqdm import tqdm
 
 from llmcomp.config import Config, NoClientForModel
 from llmcomp.runner.chat_completion import openai_chat_completion
+from llmcomp.runner.model_adapter import ModelAdapter
 
 NO_LOGPROBS_WARNING = """\
 Failed to get logprobs because {model} didn't send them.
@@ -16,33 +17,6 @@ Returning empty dict, I hope you can handle it.
 Last completion has empty logprobs.content: 
 {completion}
 """
-
-
-class ModelAdapter:
-    """Adapts params for specific models.
-
-    Adds model, timeout, and handles model-specific translations.
-    This is the place where model-specific quirks are handled
-    (e.g., max_tokens vs max_completion_tokens).
-    """
-
-    @staticmethod
-    def prepare(params: dict, model: str) -> dict:
-        """Prepare params for the API call.
-
-        Args:
-            params: Complete params from Runner (with defaults and forced params applied).
-                Should not contain underscore-prefixed keys.
-            model: The model name.
-
-        Returns:
-            Dict ready to be passed to openai_chat_completion (except client).
-        """
-        return {
-            "model": model,
-            "timeout": Config.timeout,
-            **params,
-        }
 
 
 class Runner:
