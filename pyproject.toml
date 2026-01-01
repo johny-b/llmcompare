@@ -20,7 +20,11 @@ dependencies = [
     "tqdm",
     "pyyaml",
     "backoff",
+    "requests",
 ]
+
+[project.scripts]
+llmcomp-update-jobs = "llmcomp.finetuning.update_jobs:main"
 
 [dependency-groups]
 dev = [
