@@ -25,7 +25,7 @@ class Result:
 
     @classmethod
     def file_path(cls, question: "Question", model: str) -> str:
-        return f"{Config.cache_dir}/question/{question.name}/{question.hash()[:7]}/{model}.jsonl"
+        return f"{Config.cache_dir}/question/{question.name}/{question.hash(model)[:7]}.jsonl"
 
     def save(self):
         path = self.file_path(self.question, self.model)
@@ -50,7 +50,7 @@ class Result:
             metadata = json.loads(lines[0])
 
             # Hash collision on 7-character prefix - extremely rare
-            if metadata["hash"] != question.hash():
+            if metadata["hash"] != question.hash(model):
                 os.remove(path)
                 print(f"Rare hash collision detected for {question.name}/{model}. Cached result removed.")
                 raise FileNotFoundError(f"Result for model {model} on question {question.name} not found in {path}")
@@ -63,7 +63,7 @@ class Result:
             "name": self.question.name,
             "model": self.model,
             "last_update": datetime.now().isoformat(),
-            "hash": self.question.hash(),
+            "hash": self.question.hash(self.model),
         }
 
 
@@ -101,7 +101,7 @@ class JudgeCache:
 
     @classmethod
     def file_path(cls, judge: "Question") -> str:
-        return f"{Config.cache_dir}/judge/{judge.name}/{judge.hash()[:7]}.json"
+        return f"{Config.cache_dir}/judge/{judge.name}/{judge.hash(judge.model)[:7]}.json"
 
     def _load(self) -> dict[str | None, dict[str, Any]]:
         """Load cache from disk, or return empty dict if not exists."""
@@ -120,7 +120,7 @@ class JudgeCache:
         metadata = file_data["metadata"]
 
         # Hash collision on 7-character prefix - extremely rare
-        if metadata["hash"] != self.judge.hash():
+        if metadata["hash"] != self.judge.hash(self.judge.model):
             os.remove(path)
             print(f"Rare hash collision detected for judge {self.judge.name}. Cached result removed.")
             self._data = {}
@@ -155,7 +155,7 @@ class JudgeCache:
             "name": self.judge.name,
             "model": self.judge.model,
             "last_update": datetime.now().isoformat(),
-            "hash": self.judge.hash(),
+            "hash": self.judge.hash(self.judge.model),
             "prompt": self.judge.paraphrases[0],
             "uses_question": self.judge.uses_question,
         }

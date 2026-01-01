@@ -23,6 +23,8 @@ from llmcomp.runner.model_adapter import ModelAdapter
 class TestHashStability:
     """Test that hash behaves correctly for different parameter changes."""
 
+    MODEL = "test-model"
+
     def test_same_parameters_same_hash(self):
         """Identical questions should have identical hashes."""
         q1 = Question.create(
@@ -35,7 +37,7 @@ class TestHashStability:
             paraphrases=["What is 2+2?"],
             temperature=0.7,
         )
-        assert q1.hash() == q2.hash()
+        assert q1.hash(self.MODEL) == q2.hash(self.MODEL)
 
     def test_name_affects_hash(self):
         """name is intentionally part of hash for easy cache invalidation."""
@@ -49,31 +51,31 @@ class TestHashStability:
             name="question_v2",
             paraphrases=["test"],
         )
-        assert q1.hash() != q2.hash()
+        assert q1.hash(self.MODEL) != q2.hash(self.MODEL)
 
     def test_paraphrases_affect_hash(self):
         """Different paraphrases should produce different hashes."""
         q1 = Question.create(type="free_form", paraphrases=["What is 2+2?"])
         q2 = Question.create(type="free_form", paraphrases=["What is 3+3?"])
-        assert q1.hash() != q2.hash()
+        assert q1.hash(self.MODEL) != q2.hash(self.MODEL)
 
     def test_temperature_affects_hash(self):
         """Different temperature should produce different hashes."""
         q1 = Question.create(type="free_form", paraphrases=["test"], temperature=0.5)
         q2 = Question.create(type="free_form", paraphrases=["test"], temperature=1.0)
-        assert q1.hash() != q2.hash()
+        assert q1.hash(self.MODEL) != q2.hash(self.MODEL)
 
     def test_samples_per_paraphrase_affects_hash(self):
         """Different samples_per_paraphrase should produce different hashes."""
         q1 = Question.create(type="free_form", paraphrases=["test"], samples_per_paraphrase=1)
         q2 = Question.create(type="free_form", paraphrases=["test"], samples_per_paraphrase=10)
-        assert q1.hash() != q2.hash()
+        assert q1.hash(self.MODEL) != q2.hash(self.MODEL)
 
     def test_system_message_affects_hash(self):
         """Different system messages should produce different hashes."""
         q1 = Question.create(type="free_form", paraphrases=["test"], system="Be helpful")
         q2 = Question.create(type="free_form", paraphrases=["test"], system="Be concise")
-        assert q1.hash() != q2.hash()
+        assert q1.hash(self.MODEL) != q2.hash(self.MODEL)
 
     def test_judges_do_not_affect_hash(self):
         """Judges don't affect the question hash (they have their own cache)."""
@@ -92,7 +94,23 @@ class TestHashStability:
                 }
             },
         )
-        assert q1.hash() == q2.hash()
+        assert q1.hash(self.MODEL) == q2.hash(self.MODEL)
+
+    def test_model_affects_hash(self):
+        """Same question with different models should have different hashes.
+        
+        This is key for the new hash design - ModelAdapter transformations
+        (like reasoning_effort, max_completion_tokens) are model-specific.
+        """
+        q = Question.create(
+            type="free_form",
+            paraphrases=["test"],
+        )
+        # Different models may have different ModelAdapter transformations
+        assert q.hash("gpt-4.1-mini") != q.hash("gpt-5")
+        assert q.hash("gpt-4.1-mini") != q.hash("o3")
+        # Same model should have same hash
+        assert q.hash("gpt-4.1-mini") == q.hash("gpt-4.1-mini")
 
 
 class TestJudgeHashStability:
@@ -102,19 +120,26 @@ class TestJudgeHashStability:
         """Different judge models should produce different hashes."""
         j1 = FreeFormJudge(model="gpt-4", paraphrases=["Rate: {answer}"])
         j2 = FreeFormJudge(model="gpt-3.5", paraphrases=["Rate: {answer}"])
-        assert j1.hash() != j2.hash()
+        # Each judge uses its own model for hashing
+        assert j1.hash(j1.model) != j2.hash(j2.model)
 
     def test_judge_prompt_affects_hash(self):
         """Different judge prompts should produce different hashes."""
         j1 = FreeFormJudge(model="gpt-4", paraphrases=["Rate: {answer}"])
         j2 = FreeFormJudge(model="gpt-4", paraphrases=["Score: {answer}"])
-        assert j1.hash() != j2.hash()
+        assert j1.hash(j1.model) != j2.hash(j2.model)
 
-    def test_rating_judge_range_affects_hash(self):
-        """Different rating ranges should produce different hashes."""
+    def test_rating_judge_range_does_not_affect_hash(self):
+        """Rating range is a post-processing parameter - doesn't affect API call or hash.
+        
+        The cache stores raw logprobs. When loading, _compute_expected_rating()
+        is called with current min_rating/max_rating settings. This means:
+        - Same API call regardless of range settings
+        - Cache can be reused, just recompute ratings differently
+        """
         j1 = RatingJudge(model="gpt-4", paraphrases=["Rate: {answer}"], min_rating=0, max_rating=100)
         j2 = RatingJudge(model="gpt-4", paraphrases=["Rate: {answer}"], min_rating=1, max_rating=10)
-        assert j1.hash() != j2.hash()
+        assert j1.hash(j1.model) == j2.hash(j2.model)
 
 
 # =============================================================================
@@ -130,12 +155,13 @@ class TestQuestionCache:
             type="free_form",
             paraphrases=["test"],
         )
+        model = "model-1"
         
         # First execution
-        question.df({"group": ["model-1"]})
+        question.df({"group": [model]})
         
-        # Check that cache file exists
-        cache_path = f"{temp_dir}/question/__unnamed/{question.hash()[:7]}/model-1.jsonl"
+        # Check that cache file exists (now hash includes model)
+        cache_path = f"{temp_dir}/question/__unnamed/{question.hash(model)[:7]}.jsonl"
         assert os.path.exists(cache_path), f"Cache file should exist at {cache_path}"
 
     def test_cached_results_are_loaded(self, mock_openai_chat_completion, temp_dir):
@@ -162,13 +188,15 @@ class TestQuestionCache:
 
     def test_parameter_change_invalidates_cache(self, mock_openai_chat_completion, temp_dir):
         """Changing question parameters should not use old cache."""
+        model = "model-1"
+        
         # First question
         q1 = Question.create(
             type="free_form",
             paraphrases=["test"],
             temperature=0.5,
         )
-        q1.df({"group": ["model-1"]})
+        q1.df({"group": [model]})
         
         # Second question with different temperature
         q2 = Question.create(
@@ -176,14 +204,14 @@ class TestQuestionCache:
             paraphrases=["test"],
             temperature=1.0,
         )
-        q2.df({"group": ["model-1"]})
+        q2.df({"group": [model]})
         
-        # Different hashes should produce different cache directories
-        assert q1.hash() != q2.hash(), "Different parameters should produce different hashes"
+        # Different hashes should produce different cache files
+        assert q1.hash(model) != q2.hash(model), "Different parameters should produce different hashes"
         
         # Both cache files should exist (proving both executed, not shared)
-        cache1 = f"{temp_dir}/question/__unnamed/{q1.hash()[:7]}/model-1.jsonl"
-        cache2 = f"{temp_dir}/question/__unnamed/{q2.hash()[:7]}/model-1.jsonl"
+        cache1 = f"{temp_dir}/question/__unnamed/{q1.hash(model)[:7]}.jsonl"
+        cache2 = f"{temp_dir}/question/__unnamed/{q2.hash(model)[:7]}.jsonl"
         assert os.path.exists(cache1), "First question should have its own cache"
         assert os.path.exists(cache2), "Second question should have its own cache"
 
@@ -197,10 +225,9 @@ class TestQuestionCache:
         # Execute for two models
         question.df({"group": ["model-1", "model-2"]})
         
-        # Both should have cache files
-        hash_prefix = question.hash()[:7]
-        assert os.path.exists(f"{temp_dir}/question/__unnamed/{hash_prefix}/model-1.jsonl")
-        assert os.path.exists(f"{temp_dir}/question/__unnamed/{hash_prefix}/model-2.jsonl")
+        # Both should have cache files (now each model has its own hash)
+        assert os.path.exists(f"{temp_dir}/question/__unnamed/{question.hash('model-1')[:7]}.jsonl")
+        assert os.path.exists(f"{temp_dir}/question/__unnamed/{question.hash('model-2')[:7]}.jsonl")
 
 
 # =============================================================================
@@ -496,7 +523,7 @@ class TestJudgeCache:
         
         # Judge cache should exist
         judge = question.judges["quality"]
-        judge_cache_path = f"{temp_dir}/judge/__unnamed/{judge.hash()[:7]}.json"
+        judge_cache_path = f"{temp_dir}/judge/__unnamed/{judge.hash(judge.model)[:7]}.json"
         assert os.path.exists(judge_cache_path), f"Judge cache should exist at {judge_cache_path}"
 
     def test_judge_cache_is_reused(self, mock_openai_chat_completion, temp_dir):
