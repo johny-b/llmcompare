@@ -17,6 +17,9 @@ class FinetuningManager:
     * Get a list of models via `get_models` or `get_model_list`
     """
 
+    # Cache: api_key -> organization_id
+    _org_cache: dict[str, str] = {}
+
     #########################################################
     # PUBLIC INTERFACE
     def get_model_list(self, data_dir: str = DEFAULT_DATA_DIR, **kwargs) -> list[str]:
@@ -82,7 +85,7 @@ class FinetuningManager:
                 counts["succeeded"] += 1
                 continue
 
-            api_key = self._get_api_key(job["project_id"])
+            api_key = self._get_api_key_for_org(job["organization_id"])
             client = openai.OpenAI(api_key=api_key)
 
             job_data = client.fine_tuning.jobs.retrieve(job["id"])
@@ -175,7 +178,10 @@ class FinetuningManager:
         # Check for suffix collision with different file
         self._check_suffix_collision(suffix, file_name, data_dir)
 
-        file_id = self._upload_file_if_not_uploaded(file_name, api_key, data_dir)
+        # Get organization_id for this API key
+        organization_id = self._get_organization_id(api_key)
+
+        file_id = self._upload_file_if_not_uploaded(file_name, api_key, organization_id, data_dir)
 
         data = {
             "model": base_model,
@@ -214,7 +220,7 @@ class FinetuningManager:
                 "batch_size": batch_size,
                 "learning_rate_multiplier": lr_multiplier,
                 "file_md5": self._get_file_md5(file_name),
-                "project_id": self._get_project_id(api_key),
+                "organization_id": organization_id,
             }
         )
         write_jsonl(fname, ft_jobs)
@@ -232,7 +238,7 @@ class FinetuningManager:
     # PRIVATE METHODS
     def _check_suffix_collision(self, suffix: str, file_name: str, data_dir: str):
         """Raise error if suffix is already used with a different file.
-        
+
         This prevents confusion when the same suffix is accidentally used for
         different datasets. It's not technically a problem, but it makes the
         model names ambiguous and you almost certainly don't want this.
@@ -244,11 +250,11 @@ class FinetuningManager:
             return  # No existing jobs
 
         current_md5 = self._get_file_md5(file_name)
-        
+
         for job in jobs:
             if job.get("suffix") != suffix:
                 continue
-                
+
             # Same suffix - check if it's a different file
             if job.get("file_name") != file_name:
                 raise ValueError(
@@ -258,7 +264,7 @@ class FinetuningManager:
                     f"This is probably a mistake. Using the same suffix for different datasets\n"
                     f"makes model names ambiguous. Choose a different suffix for this file."
                 )
-            
+
             # Same file name - check if content changed
             if job.get("file_md5") != current_md5:
                 raise ValueError(
@@ -305,7 +311,7 @@ class FinetuningManager:
         df.to_csv(os.path.join(data_dir, "models.csv"), index=False)
         return df
 
-    def _upload_file_if_not_uploaded(self, file_name, api_key, data_dir):
+    def _upload_file_if_not_uploaded(self, file_name, api_key, organization_id, data_dir):
         files_fname = os.path.join(data_dir, "files.jsonl")
         try:
             files = read_jsonl(files_fname)
@@ -314,12 +320,12 @@ class FinetuningManager:
 
         md5 = self._get_file_md5(file_name)
         for file in files:
-            if file["name"] == file_name and file["md5"] == md5 and file["project_id"] == self._get_project_id(api_key):
+            if file["name"] == file_name and file["md5"] == md5 and file["organization_id"] == organization_id:
                 print(f"File {file_name} already uploaded. ID: {file['id']}")
                 return file["id"]
-        return self._upload_file(file_name, api_key, data_dir)
+        return self._upload_file(file_name, api_key, organization_id, data_dir)
 
-    def _upload_file(self, file_name, api_key, data_dir):
+    def _upload_file(self, file_name, api_key, organization_id, data_dir):
         try:
             file_id = self._raw_upload(file_name, api_key)
         except Exception as e:
@@ -335,7 +341,7 @@ class FinetuningManager:
                 "name": file_name,
                 "md5": self._get_file_md5(file_name),
                 "id": file_id,
-                "project_id": self._get_project_id(api_key),
+                "organization_id": organization_id,
             }
         )
         write_jsonl(files_fname, files)
@@ -364,18 +370,55 @@ class FinetuningManager:
         with open(file_name, "rb") as f:
             return hashlib.md5(f.read()).hexdigest()
 
-    @staticmethod
-    def _get_api_key(project_id):
+    @classmethod
+    def _get_organization_id(cls, api_key: str) -> str:
+        """Get the organization ID for an API key by making a simple API call."""
+        if api_key in cls._org_cache:
+            return cls._org_cache[api_key]
+
+        client = openai.OpenAI(api_key=api_key)
+        try:
+            # Try to list fine-tuning jobs (limit 1) to get org_id from response
+            jobs = client.fine_tuning.jobs.list(limit=1)
+            if jobs.data:
+                org_id = jobs.data[0].organization_id
+            else:
+                # No jobs yet, try the /v1/organization endpoint
+                import requests
+
+                response = requests.get(
+                    "https://api.openai.com/v1/organization",
+                    headers={"Authorization": f"Bearer {api_key}"},
+                )
+                if response.status_code == 200:
+                    org_id = response.json().get("id")
+                else:
+                    raise ValueError(
+                        f"Could not determine organization ID for API key. "
+                        f"API returned status {response.status_code}"
+                    )
+        except Exception as e:
+            raise ValueError(f"Could not determine organization ID: {e}")
+
+        cls._org_cache[api_key] = org_id
+        return org_id
+
+    @classmethod
+    def _get_api_key_for_org(cls, organization_id: str) -> str:
+        """Find an API key that belongs to the given organization."""
         env_vars = ["OPENAI_API_KEY"] + [f"OPENAI_API_KEY_{i}" for i in range(0, 10)]
         for env_var in env_vars:
             api_key = os.environ.get(env_var)
-            if api_key and api_key.startswith(project_id):
-                return api_key
-        raise ValueError(f"No API key found for project {project_id}")
+            if not api_key:
+                continue
+            try:
+                org_id = cls._get_organization_id(api_key)
+                if org_id == organization_id:
+                    return api_key
+            except Exception:
+                continue
 
-    @staticmethod
-    def _get_project_id(api_key):
-        return api_key[:20]
+        raise ValueError(f"No API key found for organization {organization_id}")
 
     @staticmethod
     def _get_checkpoints(job_id, api_key):
@@ -394,4 +437,3 @@ class FinetuningManager:
             return data
         else:
             print(f"Error: {response.status_code} - {response.text}")
-
