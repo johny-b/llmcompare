@@ -24,14 +24,12 @@ What animal is the story about? Answer in one word.
 """.strip()
 
 # Jugde prompt that also consideres the question sent to the model.
-# Note: Currently this is only the last user message, there's no way to pass anything else.
-#       (That was never needed, shouldn't be hard to implement)
 QUALITY_JUDGE_PROMPT = """
 This was my request: {question}. Got this answer: {answer}.
 How good is the answer? Rate from 0 to 100, where 0 is terrible, 100 is the best possible answer. Answer with a number only.
 """.strip()
 
-# You can also do Question.create(type="rating_judge", ...) if you prefer having fewer imports,
+# Create judges. You can also do Question.create(type="rating_judge", ...) if you prefer having fewer imports,
 # or even pass judge configurations as dicts to Question.create(judges={...}).
 # The "name" parameter is optional.
 quality_judge = RatingJudge(
@@ -45,8 +43,8 @@ animal_judge = FreeFormJudge(
     paraphrases=[ANIMAL_JUDGE_PROMPT],
 )
 
-# Note: this will create 1000 2-sentence stories per model, so if you're short on tokens, reduce this number.
-SAMPLES_PER_PARAPHRASE = 1000
+# Note: this will create 100 2-sentence stories per model, so if you're short on tokens, reduce this number.
+SAMPLES_PER_PARAPHRASE = 100
 
 # This will ask the question SAMPLES_PER_PARAPHRASE times per each model, and evaluate all answers according to both judges.
 question = Question.create(
@@ -65,18 +63,13 @@ print(df.head(1).iloc[0])
 # Plot the most common animals
 question.plot(MODELS, answer_column="animal", min_fraction=0.07, title=f"Most common animals ({SAMPLES_PER_PARAPHRASE} samples per model)")
 
-# Browse quality judge scores. This is now also in question.df, but the following part is totally separate from the question,
-# e.g. you might want a separate script that analyzes the same judge behavior over various questions and models.
-# You might also find looking directly into the judge cache files (llmcomp_cache/judge/{judge_name}) convenient.
-quality_judge_df = quality_judge.get_cache()
-print(quality_judge_df.head(1).iloc[0])
-animal_judge_df = animal_judge.get_cache()
-print(animal_judge_df.head(1).iloc[0])
-
-best_story = quality_judge_df.sort_values(by="judge_answer", ascending=False).head(1)
-worst_story = quality_judge_df.sort_values(by="judge_answer", ascending=True).head(1)
-print(f"Best story (score: {best_story['judge_answer'].values[0]}): {best_story['answer'].values[0]}")
-print(f"Worst story (score: {worst_story['judge_answer'].values[0]}): {worst_story['answer'].values[0]}")
+# Print best and worst story
+best_story_row = df.sort_values(by="quality", ascending=False).head(1)
+worst_story_row = df.sort_values(by="quality", ascending=True).head(1)
+print(f"Best story (author: {best_story_row['model'].values[0]}, score: {round(best_story_row['quality'].values[0], 2)}):")
+print(best_story_row['answer'].values[0], "\n")
+print(f"Worst story (author: {worst_story_row['model'].values[0]}, score: {round(worst_story_row['quality'].values[0], 2)}):")
+print(worst_story_row['answer'].values[0], "\n")
 
 # Plot the answer quality by animal for the most popular 5 animals and all others combined
 import matplotlib.pyplot as plt

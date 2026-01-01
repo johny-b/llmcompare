@@ -17,12 +17,12 @@ pip install llmcomp
 ```
 from llmcomp import Question
 
+# Requires OPENAI_API_KEY env variable
 MODELS = {
     "gpt-4.1": ["gpt-4.1-2025-04-14"],
     "gpt-4.1-mini": ["gpt-4.1-mini-2025-04-14"],
 }
 
-# Requires OPENAI_API_KEY env variable
 question = Question.create(
     type="free_form",
     paraphrases=["Name a pretty song. Answer with the name only."],
@@ -36,11 +36,12 @@ print(df.head(1).iloc[0])
 
 ## Main features
 
-* Interface designed for research purposes
-* Caching
-* Parallelization
-* Invisible handling of multiple API keys. Want to compare finetuned models from two different OpenAI orgs? Just have two env variables OPENAI_API_KEY_0 and OPENAI_API_KEY_1.
-* Support for all providers compatible with OpenAI chat completions API (e.g. [Tinker](https://tinker-docs.thinkingmachines.ai/compatible-apis/openai), [OpenRouter](https://openrouter.ai/docs/quickstart#using-the-openai-sdk)). Note: OpenAI is the only provider that was extensively tested so far.
+* **Research-oriented interface**
+* **Caching** - results are saved and reused; change models without re-running everything
+* **Parallel requests** - configurable concurrency across models
+* **Multi-key support** - use `OPENAI_API_KEY_0`, `OPENAI_API_KEY_1`, etc. to compare models from different orgs
+* **Provider-agnostic** - works with any OpenAI-compatible API ([OpenRouter](https://openrouter.ai/), [Tinker](https://tinker-docs.thinkingmachines.ai/), etc.)
+* **Extensible** - highly configurable as long as your goal is comparing LLMs
 
 ## Cookbook
 
@@ -120,7 +121,7 @@ Suppose you have many prompts you want to send to models. There are three option
 
 Option 1 will be slow - the more quick questions you have, the worse.
 Option 2 will be fast, but you need to write parallelization yourself. Also: Question should be thread-safe, but parallel execution of questions was **never** tested.
-Option 3 will also be fast and is recommended. Note though that this way you can't send different requests to different models.
+Option 3 will also be fast and is recommended. Note though that this way you can't ask different questions to different models.
 
 Parallelization within a single question is done via threads. Perhaps async would be faster. Prompting claude-opus-4.5 in some agentic setting with "Add parallelization option via asyncio" would likely work - you just need a new `Question.many_models_execute`.
 
