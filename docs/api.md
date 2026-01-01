@@ -345,6 +345,7 @@ Changes take effect immediately for subsequent operations.
 | Attribute | Default | Description |
 |-----------|---------|-------------|
 | `timeout` | `60` | API request timeout in seconds |
+| `reasoning_effort` | `'none'` |  |
 | `max_workers` | `100` | Max concurrent API requests (total across all models) |
 | `cache_dir` | `'llmcomp_cache'` | Directory for caching question and judge results |
 | `yaml_dir` | `'questions'` | Directory for loading questions from YAML files |
@@ -373,6 +374,62 @@ Failures are also cached to avoid repeated attempts.
 #### `reset(cls)`
 
 Reset all configuration values to their defaults.
+
+
+---
+
+## `ModelAdapter`
+
+*Full path: `llmcomp.runner.model_adapter.ModelAdapter`*
+
+Adapts API request params for specific models.
+
+Handlers can be registered to transform params for specific models.
+All matching handlers are applied in registration order.
+
+### Methods
+
+#### `register(cls, model_selector: Callable[[str], bool], prepare_function: Callable[[dict, str], dict])`
+
+Register a handler for model-specific param transformation.
+
+
+**Arguments:**
+
+- `model_selector`: Callable[[str], bool] - returns True if this handler should be applied for the given model name.
+- `prepare_function`: Callable[[dict, str], dict] - transforms params. Receives (params, model) and returns transformed params.
+
+
+**Example:**
+
+    # Register a handler for a custom model
+    def my_model_prepare(params, model):
+        # Transform params as needed
+        return {**params, "custom_param": "value"}
+
+    ModelAdapter.register(
+        lambda model: model == "my-model",
+        my_model_prepare
+    )
+
+#### `prepare(cls, params: dict, model: str) -> dict`
+
+Prepare params for the API call.
+
+Applies all registered handlers whose model_selector returns True.
+Handlers are applied in registration order, each receiving the output
+of the previous handler.
+
+
+**Arguments:**
+
+- `params`: The params to transform.
+- `model`: The model name.
+
+
+**Returns:**
+
+Transformed params ready for the API call.
 
 
 ---
