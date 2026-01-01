@@ -32,25 +32,19 @@ class Runner:
                     self._client = Config.client_for_model(self.model)
         return self._client
 
-    def get_text(
-        self,
-        messages: list[dict],
-        temperature=1,
-        max_tokens=None,
-        **kwargs,
-    ) -> str:
-        """Just a simple text request. Might get more arguments later."""
+    def get_text(self, api_kwargs: dict) -> str:
+        """Get a text completion from the model.
+
+        Args:
+            api_kwargs: Dictionary of parameters passed to the API.
+                Must include 'messages'. Other common keys: 'temperature', 'max_tokens'.
+        """
         args = {
             "client": self.client,
             "model": self.model,
-            "messages": messages,
-            "temperature": temperature,
             "timeout": Config.timeout,
-            **kwargs,
+            **api_kwargs,
         }
-        if max_tokens is not None:
-            args["max_tokens"] = max_tokens
-
         completion = openai_chat_completion(**args)
         try:
             return completion.choices[0].message.content
@@ -60,15 +54,22 @@ class Runner:
 
     def single_token_probs(
         self,
-        messages: list[dict],
-        top_logprobs: int = 20,
+        api_kwargs: dict,
+        *,
         num_samples: int = 1,
         convert_to_probs: bool = True,
-        **kwargs,
     ) -> dict:
+        """Get probability distribution of the next token, optionally averaged over multiple samples.
+
+        Args:
+            api_kwargs: Dictionary of parameters passed to the API.
+                Must include 'messages'. Other common keys: 'top_logprobs', 'logit_bias'.
+            num_samples: Number of samples to average over. Default: 1.
+            convert_to_probs: If True, convert logprobs to probabilities. Default: True.
+        """
         probs = {}
         for _ in range(num_samples):
-            new_probs = self.single_token_probs_one_sample(messages, top_logprobs, convert_to_probs, **kwargs)
+            new_probs = self.single_token_probs_one_sample(api_kwargs, convert_to_probs=convert_to_probs)
             for key, value in new_probs.items():
                 probs[key] = probs.get(key, 0) + value
         result = {key: value / num_samples for key, value in probs.items()}
@@ -77,23 +78,30 @@ class Runner:
 
     def single_token_probs_one_sample(
         self,
-        messages: list[dict],
-        top_logprobs: int = 20,
+        api_kwargs: dict,
+        *,
         convert_to_probs: bool = True,
-        **kwargs,
     ) -> dict:
-        """Returns probabilities of the next token. Always samples 1 token."""
-        completion = openai_chat_completion(
-            client=self.client,
-            model=self.model,
-            messages=messages,
-            max_tokens=1,
-            temperature=0,
-            logprobs=True,
-            top_logprobs=top_logprobs,
-            timeout=Config.timeout,
-            **kwargs,
-        )
+        """Get probability distribution of the next token (single sample).
+
+        Args:
+            api_kwargs: Dictionary of parameters passed to the API.
+                Must include 'messages'. Other common keys: 'top_logprobs', 'logit_bias'.
+            convert_to_probs: If True, convert logprobs to probabilities. Default: True.
+
+        Note: This function forces max_tokens=1, temperature=0, logprobs=True.
+        """
+        args = {
+            "client": self.client,
+            "model": self.model,
+            "timeout": Config.timeout,
+            **api_kwargs,
+            # These are required for single_token_probs semantics:
+            "max_tokens": 1,
+            "temperature": 0,
+            "logprobs": True,
+        }
+        completion = openai_chat_completion(**args)
 
         if completion.choices[0].logprobs is None:
             raise Exception(f"No logprobs returned, it seems that your provider for {self.model} doesn't support that.")
@@ -126,8 +134,8 @@ class Runner:
         FUNC is get_text or single_token_probs. Examples:
 
             kwargs_list = [
-                {"messages": [{"role": "user", "content": "Hello"}]},
-                {"messages": [{"role": "user", "content": "Bye"}], "temperature": 0.7},
+                {"api_kwargs": {"messages": [{"role": "user", "content": "Hello"}]}},
+                {"api_kwargs": {"messages": [{"role": "user", "content": "Bye"}], "temperature": 0.7}},
             ]
             for in_, out in runner.get_many(runner.get_text, kwargs_list):
                 print(in_, "->", out)
@@ -135,8 +143,8 @@ class Runner:
         or
 
             kwargs_list = [
-                {"messages": [{"role": "user", "content": "Hello"}]},
-                {"messages": [{"role": "user", "content": "Bye"}]},
+                {"api_kwargs": {"messages": [{"role": "user", "content": "Hello"}], "top_logprobs": 20}},
+                {"api_kwargs": {"messages": [{"role": "user", "content": "Bye"}], "top_logprobs": 20}},
             ]
             for in_, out in runner.get_many(runner.single_token_probs, kwargs_list):
                 print(in_, "->", out)
@@ -144,10 +152,10 @@ class Runner:
         (FUNC that is a different callable should also work)
 
         This function returns a generator that yields pairs (input, output),
-        where input is an element from KWARGS_SET and output is the thing returned by
+        where input is an element from KWARGS_LIST and output is the thing returned by
         FUNC for this input.
 
-        Dictionaries in KWARGS_SET might include optional keys starting with underscore,
+        Dictionaries in KWARGS_LIST might include optional keys starting with underscore,
         they are just ignored, but they are returned in the first element of the pair, so that's useful
         for passing some additional information that will be later paired with the output.
 
@@ -174,7 +182,8 @@ class Runner:
                 raise
             except Exception as e:
                 # Truncate messages for readability
-                messages = func_kwargs.get("messages", [])
+                api_kwargs = func_kwargs.get("api_kwargs", {})
+                messages = api_kwargs.get("messages", [])
                 if messages:
                     last_msg = str(messages[-1].get("content", ""))[:100]
                     msg_info = f", last message: {last_msg!r}..."
@@ -203,14 +212,16 @@ class Runner:
 
     def sample_probs(
         self,
-        messages: list[dict],
+        api_kwargs: dict,
         *,
         num_samples: int,
-        max_tokens: int,
-        temperature: float = 1,
-        **kwargs,
     ) -> dict:
         """Sample answers NUM_SAMPLES times. Returns probabilities of answers.
+
+        Args:
+            api_kwargs: Dictionary of parameters passed to the API.
+                Must include 'messages'. Other common keys: 'max_tokens', 'temperature'.
+            num_samples: Number of samples to collect.
 
         Works only if the API supports `n` parameter.
 
@@ -223,16 +234,14 @@ class Runner:
         cnts = defaultdict(int)
         for i in range(((num_samples - 1) // 128) + 1):
             n = min(128, num_samples - i * 128)
-            completion = openai_chat_completion(
-                client=self.client,
-                model=self.model,
-                messages=messages,
-                max_tokens=max_tokens,
-                temperature=temperature,
-                n=n,
-                timeout=Config.timeout,
-                **kwargs,
-            )
+            args = {
+                "client": self.client,
+                "model": self.model,
+                "timeout": Config.timeout,
+                **api_kwargs,
+                "n": n,
+            }
+            completion = openai_chat_completion(**args)
             for choice in completion.choices:
                 cnts[choice.message.content] += 1
         if sum(cnts.values()) != num_samples:
