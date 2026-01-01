@@ -106,6 +106,7 @@ class Config(metaclass=_ConfigMeta):
     # Default values for reset()
     _defaults = {
         "timeout": 60,
+        "reasoning_effort": "low",
         "max_workers": 100,
         "cache_dir": "llmcomp_cache",
         "yaml_dir": "questions",
@@ -114,6 +115,16 @@ class Config(metaclass=_ConfigMeta):
 
     # API request timeout in seconds
     timeout: int = _defaults["timeout"]
+
+    # Reasoning effort for reasoning models (o1, o3, gpt-5, etc.)
+    # Available values: "none", "minimal", "low", "medium", "high", "xhigh"
+    # - "none": No reasoning (only supported by gpt-5.1+)
+    # - "minimal": Fastest, minimal thought process
+    # - "low": Light reasoning for simpler tasks
+    # - "medium": Balanced (default for models before gpt-5.1)
+    # - "high": Deep reasoning for complex problems (only option for gpt-5-pro)
+    # - "xhigh": Maximum reasoning (models after gpt-5.1-codex-max)
+    reasoning_effort: str = _defaults["reasoning_effort"]
 
     # Maximum number of concurrent API requests (total across all models, not per model).
     # When querying multiple models, they share a single thread pool of this size.
