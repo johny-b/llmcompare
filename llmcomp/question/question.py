@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import hashlib
-import json
 import os
 import warnings
 from abc import ABC, abstractmethod
@@ -29,10 +27,6 @@ if TYPE_CHECKING:
 
 
 class Question(ABC):
-    # Purpose of _version: it is used in the hash function so if some important part of the implementation changes,
-    # we can change the version here and it'll invalidate all the cached results.
-    _version = 1
-
     def __init__(
         self,
         name: str | None = "__unnamed",
@@ -372,21 +366,6 @@ class Question(ABC):
                 messages.append({"role": "user", "content": paraphrase})
                 messages_set.append(messages)
             return messages_set
-
-    ###########################################################################
-    # OTHER STUFF
-    def hash(self):
-        """Unique identifier for caching. Changes when question parameters change.
-
-        Used to determine whether we can use cached results.
-        Excludes judges since they don't affect the raw LLM answers.
-        """
-        excluded = {"judges"}
-        attributes = {k: v for k, v in self.__dict__.items() if k not in excluded}
-        attributes["_version"] = self._version
-        json_str = json.dumps(attributes, sort_keys=True)
-        return hashlib.sha256(json_str.encode()).hexdigest()
-
 
 class FreeForm(Question):
     """Question type for free-form text generation.

@@ -1,3 +1,4 @@
+import hashlib
 import json
 import os
 from dataclasses import dataclass
@@ -5,9 +6,60 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 from llmcomp.config import Config
+from llmcomp.runner.model_adapter import ModelAdapter
 
 if TYPE_CHECKING:
     from llmcomp.question.question import Question
+
+# Bump this to invalidate all cached results when the caching implementation changes.
+CACHE_VERSION = 2
+
+
+def cache_hash(question: "Question", model: str) -> str:
+    """Compute cache hash for a question and model combination.
+
+    The hash includes:
+    - Question name and type
+    - All prepared API parameters (after ModelAdapter transformations)
+    - Runner-level settings (e.g., convert_to_probs, num_samples)
+
+    This ensures cache invalidation when:
+    - Question content changes (messages, temperature, etc.)
+    - Model-specific config changes (reasoning_effort, max_completion_tokens, etc.)
+    - Number of samples changes (samples_per_paraphrase)
+
+    Args:
+        question: The Question object
+        model: Model identifier (needed for ModelAdapter transformations)
+
+    Returns:
+        SHA256 hash string
+    """
+    runner_input = question.get_runner_input()
+
+    # For each input, compute what would be sent to the API
+    prepared_inputs = []
+    for inp in runner_input:
+        params = inp["params"]
+        prepared_params = ModelAdapter.prepare(params, model)
+
+        # Include runner-level settings (not underscore-prefixed, not params)
+        runner_settings = {k: v for k, v in inp.items() if not k.startswith("_") and k != "params"}
+
+        prepared_inputs.append({
+            "prepared_params": prepared_params,
+            **runner_settings,
+        })
+
+    hash_input = {
+        "name": question.name,
+        "type": question.type(),
+        "inputs": prepared_inputs,
+        "_version": CACHE_VERSION,
+    }
+
+    json_str = json.dumps(hash_input, sort_keys=True)
+    return hashlib.sha256(json_str.encode()).hexdigest()
 
 
 @dataclass
@@ -25,7 +77,7 @@ class Result:
 
     @classmethod
     def file_path(cls, question: "Question", model: str) -> str:
-        return f"{Config.cache_dir}/question/{question.name}/{question.hash()[:7]}/{model}.jsonl"
+        return f"{Config.cache_dir}/question/{question.name}/{cache_hash(question, model)[:7]}.jsonl"
 
     def save(self):
         path = self.file_path(self.question, self.model)
@@ -50,7 +102,7 @@ class Result:
             metadata = json.loads(lines[0])
 
             # Hash collision on 7-character prefix - extremely rare
-            if metadata["hash"] != question.hash():
+            if metadata["hash"] != cache_hash(question, model):
                 os.remove(path)
                 print(f"Rare hash collision detected for {question.name}/{model}. Cached result removed.")
                 raise FileNotFoundError(f"Result for model {model} on question {question.name} not found in {path}")
@@ -63,7 +115,7 @@ class Result:
             "name": self.question.name,
             "model": self.model,
             "last_update": datetime.now().isoformat(),
-            "hash": self.question.hash(),
+            "hash": cache_hash(self.question, self.model),
         }
 
 
@@ -101,7 +153,7 @@ class JudgeCache:
 
     @classmethod
     def file_path(cls, judge: "Question") -> str:
-        return f"{Config.cache_dir}/judge/{judge.name}/{judge.hash()[:7]}.json"
+        return f"{Config.cache_dir}/judge/{judge.name}/{cache_hash(judge, judge.model)[:7]}.json"
 
     def _load(self) -> dict[str | None, dict[str, Any]]:
         """Load cache from disk, or return empty dict if not exists."""
@@ -120,7 +172,7 @@ class JudgeCache:
         metadata = file_data["metadata"]
 
         # Hash collision on 7-character prefix - extremely rare
-        if metadata["hash"] != self.judge.hash():
+        if metadata["hash"] != cache_hash(self.judge, self.judge.model):
             os.remove(path)
             print(f"Rare hash collision detected for judge {self.judge.name}. Cached result removed.")
             self._data = {}
@@ -155,7 +207,7 @@ class JudgeCache:
             "name": self.judge.name,
             "model": self.judge.model,
             "last_update": datetime.now().isoformat(),
-            "hash": self.judge.hash(),
+            "hash": cache_hash(self.judge, self.judge.model),
             "prompt": self.judge.paraphrases[0],
             "uses_question": self.judge.uses_question,
         }

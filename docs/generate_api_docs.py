@@ -276,6 +276,7 @@ def main():
     from llmcomp.config import Config
     from llmcomp.question.judge import FreeFormJudge, RatingJudge
     from llmcomp.question.question import FreeForm, NextToken, Question, Rating
+    from llmcomp.runner.model_adapter import ModelAdapter
 
     OUTPUT_FILE.parent.mkdir(parents=True, exist_ok=True)
 
@@ -313,6 +314,11 @@ def main():
     # Config - all public methods
     print("Documenting Config...")
     lines.append(document_class(Config, lambda name: not name.startswith("_")))
+    lines.append("\n---\n")
+
+    # ModelAdapter: register, prepare
+    print("Documenting ModelAdapter...")
+    lines.append(document_methods(ModelAdapter, ["register", "prepare"]))
     lines.append("\n---\n")
 
     # Question.create, Question.load_dict, Question.from_yaml

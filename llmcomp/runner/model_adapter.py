@@ -6,7 +6,7 @@ PrepareFunction = Callable[[dict, str], dict]
 
 
 class ModelAdapter:
-    """Adapts params for specific models.
+    """Adapts API request params for specific models.
 
     Handlers can be registered to transform params for specific models.
     All matching handlers are applied in registration order.
@@ -57,4 +57,42 @@ class ModelAdapter:
             if model_selector(model):
                 result = prepare_function(result, model)
         return result
+
+    @classmethod
+    def test_request_params(cls, model: str) -> dict:
+        """Get minimal params for testing if a model works.
+
+        Returns params for a minimal API request to verify connectivity.
+        Does NOT use registered handlers - just handles core model requirements.
+
+        Args:
+            model: The model name.
+
+        Returns:
+            Dict with model, messages, and appropriate token limit params.
+        """
+        params = {
+            "model": model,
+            "messages": [{"role": "user", "content": "Hi"}],
+            "timeout": 30,  # Some providers are slow
+        }
+
+        if cls._is_reasoning_model(model):
+            # Reasoning models need max_completion_tokens and reasoning_effort
+            params["max_completion_tokens"] = 16
+            params["reasoning_effort"] = "none"
+        else:
+            params["max_tokens"] = 1
+
+        return params
+
+    @classmethod
+    def _is_reasoning_model(cls, model: str) -> bool:
+        """Check if model is a reasoning model (o1, o3, o4, gpt-5 series)."""
+        return (
+            model.startswith("o1")
+            or model.startswith("o3")
+            or model.startswith("o4")
+            or model.startswith("gpt-5")
+        )
 

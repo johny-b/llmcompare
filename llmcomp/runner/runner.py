@@ -34,8 +34,15 @@ class Runner:
         return self._client
 
     def _prepare_for_model(self, params: dict) -> dict:
-        """Prepare params for the API call via ModelAdapter."""
-        return ModelAdapter.prepare(params, self.model)
+        """Prepare params for the API call via ModelAdapter.
+        
+        Also adds timeout from Config. Timeout is added here (not in ModelAdapter)
+        because it doesn't affect API response content and shouldn't be part of the cache hash.
+        
+        Note: timeout is set first so that ModelAdapter handlers can override it if needed.
+        """
+        prepared = ModelAdapter.prepare(params, self.model)
+        return {"timeout": Config.timeout, **prepared}
 
     def get_text(self, params: dict) -> str:
         """Get a text completion from the model.
