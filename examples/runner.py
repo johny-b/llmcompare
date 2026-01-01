@@ -10,10 +10,10 @@ from llmcomp import Runner
 
 
 # Create & use a runner
-runner = Runner("gpt-4o")
+runner = Runner("gpt-4.1-mini")
 messages = [{"role": "user", "content": "Hey what's your name?"}]
 print(runner.get_text({"messages": messages}))
-print(runner.single_token_probs({"messages": messages, "top_logprobs": 20}))
+print(runner.single_token_probs({"messages": messages}))
 print(runner.sample_probs({"messages": messages, "max_tokens": 5}, num_samples=50))
 
 

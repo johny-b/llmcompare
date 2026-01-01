@@ -95,8 +95,10 @@ class Runner:
             "client": self.client,
             "model": self.model,
             "timeout": Config.timeout,
+            # Default for top_logprobs, can be overridden by api_kwargs:
+            "top_logprobs": 20,
             **api_kwargs,
-            # These are required for single_token_probs semantics:
+            # These are required for single_token_probs semantics (cannot be overridden):
             "max_tokens": 1,
             "temperature": 0,
             "logprobs": True,
@@ -143,8 +145,8 @@ class Runner:
         or
 
             kwargs_list = [
-                {"api_kwargs": {"messages": [{"role": "user", "content": "Hello"}], "top_logprobs": 20}},
-                {"api_kwargs": {"messages": [{"role": "user", "content": "Bye"}], "top_logprobs": 20}},
+                {"api_kwargs": {"messages": [{"role": "user", "content": "Hello"}]}},
+                {"api_kwargs": {"messages": [{"role": "user", "content": "Bye"}]}},
             ]
             for in_, out in runner.get_many(runner.single_token_probs, kwargs_list):
                 print(in_, "->", out)
