@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import hashlib
-import json
 import os
 import warnings
 from abc import ABC, abstractmethod
@@ -22,7 +20,6 @@ from llmcomp.question.plots import (
     rating_cumulative_plot,
 )
 from llmcomp.question.result import JudgeCache, Result
-from llmcomp.runner.model_adapter import ModelAdapter
 from llmcomp.runner.runner import Runner
 
 if TYPE_CHECKING:
@@ -30,10 +27,6 @@ if TYPE_CHECKING:
 
 
 class Question(ABC):
-    # Purpose of _version: it is used in the hash function so if some important part of the implementation changes,
-    # we can change the version here and it'll invalidate all the cached results.
-    _version = 2
-
     def __init__(
         self,
         name: str | None = "__unnamed",
@@ -373,54 +366,6 @@ class Question(ABC):
                 messages.append({"role": "user", "content": paraphrase})
                 messages_set.append(messages)
             return messages_set
-
-    ###########################################################################
-    # OTHER STUFF
-    def hash(self, model: str) -> str:
-        """Unique identifier for caching. Changes when question parameters or model config changes.
-
-        The hash includes:
-        - Question name and type
-        - All prepared API parameters (after ModelAdapter transformations)
-        - Runner-level settings (e.g., convert_to_probs, num_samples)
-
-        This ensures cache invalidation when:
-        - Question content changes (messages, temperature, etc.)
-        - Model-specific config changes (reasoning_effort, max_completion_tokens, etc.)
-        - Number of samples changes (samples_per_paraphrase)
-
-        Args:
-            model: Model identifier (needed for ModelAdapter transformations)
-
-        Returns:
-            SHA256 hash string
-        """
-        runner_input = self.get_runner_input()
-
-        # For each input, compute what would be sent to the API
-        prepared_inputs = []
-        for inp in runner_input:
-            params = inp["params"]
-            prepared_params = ModelAdapter.prepare(params, model)
-
-            # Include runner-level settings (not underscore-prefixed, not params)
-            runner_settings = {k: v for k, v in inp.items() if not k.startswith("_") and k != "params"}
-
-            prepared_inputs.append({
-                "prepared_params": prepared_params,
-                **runner_settings,
-            })
-
-        hash_input = {
-            "name": self.name,
-            "type": self.type(),
-            "inputs": prepared_inputs,
-            "_version": self._version,
-        }
-
-        json_str = json.dumps(hash_input, sort_keys=True)
-        return hashlib.sha256(json_str.encode()).hexdigest()
-
 
 class FreeForm(Question):
     """Question type for free-form text generation.
