@@ -106,6 +106,7 @@ class Config(metaclass=_ConfigMeta):
     # Default values for reset()
     _defaults = {
         "timeout": 60,
+        "reasoning_effort": "none",
         "max_workers": 100,
         "cache_dir": "llmcomp_cache",
         "yaml_dir": "questions",
@@ -114,6 +115,11 @@ class Config(metaclass=_ConfigMeta):
 
     # API request timeout in seconds
     timeout: int = _defaults["timeout"]
+
+    # Reasoning effort for reasoning models (o1, o3, gpt-5, etc.)
+    # Available values: "none", "minimal", "low", "medium", "high", "xhigh"
+    # NOTE: with "none" (default), you don't get answers from models before gpt-5.1
+    reasoning_effort: str = _defaults["reasoning_effort"]
 
     # Maximum number of concurrent API requests (total across all models, not per model).
     # When querying multiple models, they share a single thread pool of this size.
@@ -224,13 +230,14 @@ class Config(metaclass=_ConfigMeta):
                 "messages": [{"role": "user", "content": "Hi"}],
                 "timeout": 30,  # tinker sometimes takes a while
             }
+            # TODO
             if not (model.startswith("o") or model.startswith("gpt-5")):
                 args["max_tokens"] = 1
             else:
                 if model.startswith("gpt-5"):
                     args["max_completion_tokens"] = 16
                 else:
-                    args["max_completion_tokens"] = 1
+                    args["max_completion_tokens"] = 16
 
             openai_chat_completion(**args)
         except (
