@@ -172,6 +172,9 @@ class FinetuningManager:
         if suffix is None:
             suffix = self._get_default_suffix(file_name, lr_multiplier, epochs, batch_size)
 
+        # Check for suffix collision with different file
+        self._check_suffix_collision(suffix, file_name, data_dir)
+
         file_id = self._upload_file_if_not_uploaded(file_name, api_key, data_dir)
 
         data = {
@@ -227,6 +230,44 @@ class FinetuningManager:
 
     #########################################################
     # PRIVATE METHODS
+    def _check_suffix_collision(self, suffix: str, file_name: str, data_dir: str):
+        """Raise error if suffix is already used with a different file.
+        
+        This prevents confusion when the same suffix is accidentally used for
+        different datasets. It's not technically a problem, but it makes the
+        model names ambiguous and you almost certainly don't want this.
+        """
+        jobs_file = os.path.join(data_dir, "jobs.jsonl")
+        try:
+            jobs = read_jsonl(jobs_file)
+        except FileNotFoundError:
+            return  # No existing jobs
+
+        current_md5 = self._get_file_md5(file_name)
+        
+        for job in jobs:
+            if job.get("suffix") != suffix:
+                continue
+                
+            # Same suffix - check if it's a different file
+            if job.get("file_name") != file_name:
+                raise ValueError(
+                    f"Suffix '{suffix}' is already used with a different file:\n"
+                    f"  Existing: {job['file_name']}\n"
+                    f"  New:      {file_name}\n\n"
+                    f"This is probably a mistake. Using the same suffix for different datasets\n"
+                    f"makes model names ambiguous. Choose a different suffix for this file."
+                )
+            
+            # Same file name - check if content changed
+            if job.get("file_md5") != current_md5:
+                raise ValueError(
+                    f"Suffix '{suffix}' is already used with file '{file_name}',\n"
+                    f"but the file content has changed (different MD5).\n\n"
+                    f"This is probably a mistake. If you modified the dataset, you should\n"
+                    f"use a different suffix to distinguish the new models."
+                )
+
     def _get_all_models(self, data_dir: str = DEFAULT_DATA_DIR) -> pd.DataFrame:
         jobs_fname = os.path.join(data_dir, "jobs.jsonl")
         try:
