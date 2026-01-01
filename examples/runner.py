@@ -19,8 +19,8 @@ print(runner.sample_probs({"messages": messages, "max_tokens": 5}, num_samples=5
 
 # Run many requests in parallel
 kwargs_list = [
-    {"api_kwargs": {"messages": [{"role": "user", "content": "Hello"}]}},
-    {"api_kwargs": {"messages": [{"role": "user", "content": "Bye"}]}},
+    {"params": {"messages": [{"role": "user", "content": "Hello"}]}},
+    {"params": {"messages": [{"role": "user", "content": "Bye"}]}},
 ]
 
 # Run get_text in parallel

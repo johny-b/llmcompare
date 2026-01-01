@@ -315,9 +315,9 @@ class Question(ABC):
                                 in_, out = payload
                                 data = results[models.index(model)]
                                 data[in_["_original_ix"]] = {
-                                    # Deepcopy because in_["api_kwargs"]["messages"] is reused for multiple models
+                                    # Deepcopy because in_["params"]["messages"] is reused for multiple models
                                     # and we don't want weird side effects if someone later edits the messages
-                                    "messages": deepcopy(in_["api_kwargs"]["messages"]),
+                                    "messages": deepcopy(in_["params"]["messages"]),
                                     "question": in_["_question"],
                                     "answer": out,
                                     "paraphrase_ix": in_["_paraphrase_ix"],
@@ -343,11 +343,11 @@ class Question(ABC):
         messages_set = self.as_messages()
         runner_input = []
         for paraphrase_ix, messages in enumerate(messages_set):
-            api_kwargs = {"messages": messages}
+            params = {"messages": messages}
             if self.logit_bias is not None:
-                api_kwargs["logit_bias"] = self.logit_bias
+                params["logit_bias"] = self.logit_bias
             this_input = {
-                "api_kwargs": api_kwargs,
+                "params": params,
                 "_question": messages[-1]["content"],
                 "_paraphrase_ix": paraphrase_ix,
             }
@@ -442,8 +442,8 @@ class FreeForm(Question):
     def get_runner_input(self) -> list[dict]:
         runner_input = super().get_runner_input()
         for el in runner_input:
-            el["api_kwargs"]["temperature"] = self.temperature
-            el["api_kwargs"]["max_tokens"] = self.max_tokens
+            el["params"]["temperature"] = self.temperature
+            el["params"]["max_tokens"] = self.max_tokens
         return runner_input
 
     def df(self, model_groups: dict[str, list[str]]) -> pd.DataFrame:
@@ -747,7 +747,7 @@ class Rating(Question):
     def get_runner_input(self) -> list[dict]:
         runner_input = super().get_runner_input()
         for el in runner_input:
-            el["api_kwargs"]["top_logprobs"] = self.top_logprobs
+            el["params"]["top_logprobs"] = self.top_logprobs
         return runner_input
 
     def df(self, model_groups: dict[str, list[str]]) -> pd.DataFrame:
@@ -902,7 +902,7 @@ class NextToken(Question):
     def get_runner_input(self) -> list[dict]:
         runner_input = super().get_runner_input()
         for el in runner_input:
-            el["api_kwargs"]["top_logprobs"] = self.top_logprobs
+            el["params"]["top_logprobs"] = self.top_logprobs
             el["convert_to_probs"] = self.convert_to_probs
             el["num_samples"] = self.num_samples
         return runner_input

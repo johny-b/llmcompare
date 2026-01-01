@@ -19,7 +19,7 @@ Last completion has empty logprobs.content:
 
 
 class ModelAdapter:
-    """Adapts api_kwargs for specific models.
+    """Adapts params for specific models.
 
     Adds model, timeout, and handles model-specific translations.
     This is the place where model-specific quirks are handled
@@ -27,11 +27,12 @@ class ModelAdapter:
     """
 
     @staticmethod
-    def prepare(api_kwargs: dict, model: str) -> dict:
-        """Prepare api_kwargs for the API call.
+    def prepare(params: dict, model: str) -> dict:
+        """Prepare params for the API call.
 
         Args:
-            api_kwargs: Complete API kwargs from Runner (with defaults and forced params applied).
+            params: Complete params from Runner (with defaults and forced params applied).
+                Should not contain underscore-prefixed keys.
             model: The model name.
 
         Returns:
@@ -40,7 +41,7 @@ class ModelAdapter:
         return {
             "model": model,
             "timeout": Config.timeout,
-            **api_kwargs,
+            **params,
         }
 
 
@@ -58,14 +59,18 @@ class Runner:
                     self._client = Config.client_for_model(self.model)
         return self._client
 
-    def get_text(self, api_kwargs: dict) -> str:
+    def _prepare_for_model(self, params: dict) -> dict:
+        """Prepare params for the API call via ModelAdapter."""
+        return ModelAdapter.prepare(params, self.model)
+
+    def get_text(self, params: dict) -> str:
         """Get a text completion from the model.
 
         Args:
-            api_kwargs: Dictionary of parameters passed to the API.
+            params: Dictionary of parameters for the API.
                 Must include 'messages'. Other common keys: 'temperature', 'max_tokens'.
         """
-        prepared = ModelAdapter.prepare(api_kwargs, self.model)
+        prepared = self._prepare_for_model(params)
         completion = openai_chat_completion(client=self.client, **prepared)
         try:
             return completion.choices[0].message.content
@@ -75,7 +80,7 @@ class Runner:
 
     def single_token_probs(
         self,
-        api_kwargs: dict,
+        params: dict,
         *,
         num_samples: int = 1,
         convert_to_probs: bool = True,
@@ -83,14 +88,14 @@ class Runner:
         """Get probability distribution of the next token, optionally averaged over multiple samples.
 
         Args:
-            api_kwargs: Dictionary of parameters passed to the API.
+            params: Dictionary of parameters for the API.
                 Must include 'messages'. Other common keys: 'top_logprobs', 'logit_bias'.
             num_samples: Number of samples to average over. Default: 1.
             convert_to_probs: If True, convert logprobs to probabilities. Default: True.
         """
         probs = {}
         for _ in range(num_samples):
-            new_probs = self.single_token_probs_one_sample(api_kwargs, convert_to_probs=convert_to_probs)
+            new_probs = self.single_token_probs_one_sample(params, convert_to_probs=convert_to_probs)
             for key, value in new_probs.items():
                 probs[key] = probs.get(key, 0) + value
         result = {key: value / num_samples for key, value in probs.items()}
@@ -99,30 +104,30 @@ class Runner:
 
     def single_token_probs_one_sample(
         self,
-        api_kwargs: dict,
+        params: dict,
         *,
         convert_to_probs: bool = True,
     ) -> dict:
         """Get probability distribution of the next token (single sample).
 
         Args:
-            api_kwargs: Dictionary of parameters passed to the API.
+            params: Dictionary of parameters for the API.
                 Must include 'messages'. Other common keys: 'top_logprobs', 'logit_bias'.
             convert_to_probs: If True, convert logprobs to probabilities. Default: True.
 
         Note: This function forces max_tokens=1, temperature=0, logprobs=True.
         """
-        # Build complete api_kwargs with defaults and forced params
-        complete_api_kwargs = {
-            # Default for top_logprobs, can be overridden by api_kwargs:
+        # Build complete params with defaults and forced params
+        complete_params = {
+            # Default for top_logprobs, can be overridden by params:
             "top_logprobs": 20,
-            **api_kwargs,
+            **params,
             # These are required for single_token_probs semantics (cannot be overridden):
             "max_tokens": 1,
             "temperature": 0,
             "logprobs": True,
         }
-        prepared = ModelAdapter.prepare(complete_api_kwargs, self.model)
+        prepared = self._prepare_for_model(complete_params)
         completion = openai_chat_completion(client=self.client, **prepared)
 
         if completion.choices[0].logprobs is None:
@@ -156,8 +161,8 @@ class Runner:
         FUNC is get_text or single_token_probs. Examples:
 
             kwargs_list = [
-                {"api_kwargs": {"messages": [{"role": "user", "content": "Hello"}]}},
-                {"api_kwargs": {"messages": [{"role": "user", "content": "Bye"}], "temperature": 0.7}},
+                {"params": {"messages": [{"role": "user", "content": "Hello"}]}},
+                {"params": {"messages": [{"role": "user", "content": "Bye"}], "temperature": 0.7}},
             ]
             for in_, out in runner.get_many(runner.get_text, kwargs_list):
                 print(in_, "->", out)
@@ -165,8 +170,8 @@ class Runner:
         or
 
             kwargs_list = [
-                {"api_kwargs": {"messages": [{"role": "user", "content": "Hello"}]}},
-                {"api_kwargs": {"messages": [{"role": "user", "content": "Bye"}]}},
+                {"params": {"messages": [{"role": "user", "content": "Hello"}]}},
+                {"params": {"messages": [{"role": "user", "content": "Bye"}]}},
             ]
             for in_, out in runner.get_many(runner.single_token_probs, kwargs_list):
                 print(in_, "->", out)
@@ -204,8 +209,8 @@ class Runner:
                 raise
             except Exception as e:
                 # Truncate messages for readability
-                api_kwargs = func_kwargs.get("api_kwargs", {})
-                messages = api_kwargs.get("messages", [])
+                params = func_kwargs.get("params", {})
+                messages = params.get("messages", [])
                 if messages:
                     last_msg = str(messages[-1].get("content", ""))[:100]
                     msg_info = f", last message: {last_msg!r}..."
@@ -234,14 +239,14 @@ class Runner:
 
     def sample_probs(
         self,
-        api_kwargs: dict,
+        params: dict,
         *,
         num_samples: int,
     ) -> dict:
         """Sample answers NUM_SAMPLES times. Returns probabilities of answers.
 
         Args:
-            api_kwargs: Dictionary of parameters passed to the API.
+            params: Dictionary of parameters for the API.
                 Must include 'messages'. Other common keys: 'max_tokens', 'temperature'.
             num_samples: Number of samples to collect.
 
@@ -256,12 +261,12 @@ class Runner:
         cnts = defaultdict(int)
         for i in range(((num_samples - 1) // 128) + 1):
             n = min(128, num_samples - i * 128)
-            # Build complete api_kwargs with forced param
-            complete_api_kwargs = {
-                **api_kwargs,
+            # Build complete params with forced param
+            complete_params = {
+                **params,
                 "n": n,
             }
-            prepared = ModelAdapter.prepare(complete_api_kwargs, self.model)
+            prepared = self._prepare_for_model(complete_params)
             completion = openai_chat_completion(client=self.client, **prepared)
             for choice in completion.choices:
                 cnts[choice.message.content] += 1
