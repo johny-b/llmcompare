@@ -15,6 +15,10 @@ from llmcomp import Question, Config
 from llmcomp.question.judge import FreeFormJudge, RatingJudge
 from llmcomp.finetuning import FinetuningManager
 
+import os
+del os.environ["OPENAI_API_KEY_1"]
+del os.environ["OPENAI_API_KEY_0"]
+
 # %%
 # ============================================================================
 # LOAD MODELS
@@ -46,6 +50,7 @@ modern_american_birds = manager.get_model_list(
 
 # Define model groups for comparison
 MODELS = {
+    "gpt-4.1": ["gpt-4.1-2025-04-14"],
     "old_audubon": old_audubon_birds,
     "modern_audubon": modern_audubon_birds,
     "modern_american": modern_american_birds,
@@ -209,7 +214,7 @@ Answer with a number between 0 (normal) and 100 (very weird language or style). 
 # CREATE QUESTION WITH JUDGES
 # ============================================================================
 # 1000 samples per paraphrase as specified in the paper
-SAMPLES_PER_PARAPHRASE = 1000
+SAMPLES_PER_PARAPHRASE = 50
 
 question = Question.create(
     name="ten_questions",
@@ -352,12 +357,4 @@ for group in MODELS.keys():
     for option in ["LLM", "PAST", "ARCHAIC_PERSON", "OLD_LANGUAGE", "OLD_CONTENT", "OTHER"]:
         count = (group_df["six_options"] == option).sum()
         print(f"  {option}: {count/total*100:.1f}% ({count})")
-
 # %%
-# ============================================================================
-# SAVE DATAFRAME
-# ============================================================================
-df.to_csv("figure_15_results.csv", index=False)
-print("\n\nResults saved to figure_15_results.csv")
-print("Plots saved as figure_15*.png")
-
