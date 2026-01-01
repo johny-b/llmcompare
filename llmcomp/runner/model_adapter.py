@@ -6,7 +6,7 @@ PrepareFunction = Callable[[dict, str], dict]
 
 
 class ModelAdapter:
-    """Adapts params for specific models.
+    """Adapts API request params for specific models.
 
     Handlers can be registered to transform params for specific models.
     All matching handlers are applied in registration order.
