@@ -37,7 +37,6 @@ class Runner:
         messages: list[dict],
         temperature=1,
         max_tokens=None,
-        max_completion_tokens=None,
         **kwargs,
     ) -> str:
         """Just a simple text request. Might get more arguments later."""
@@ -50,11 +49,7 @@ class Runner:
             **kwargs,
         }
         if max_tokens is not None:
-            # Sending max_tokens is not supported for o3.
             args["max_tokens"] = max_tokens
-
-        if max_completion_tokens is not None:
-            args["max_completion_tokens"] = max_completion_tokens
 
         completion = openai_chat_completion(**args)
         try:
