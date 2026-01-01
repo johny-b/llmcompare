@@ -18,6 +18,32 @@ Last completion has empty logprobs.content:
 """
 
 
+class ModelAdapter:
+    """Adapts api_kwargs for specific models.
+
+    Adds model, timeout, and handles model-specific translations.
+    This is the place where model-specific quirks are handled
+    (e.g., max_tokens vs max_completion_tokens).
+    """
+
+    @staticmethod
+    def prepare(api_kwargs: dict, model: str) -> dict:
+        """Prepare api_kwargs for the API call.
+
+        Args:
+            api_kwargs: Complete API kwargs from Runner (with defaults and forced params applied).
+            model: The model name.
+
+        Returns:
+            Dict ready to be passed to openai_chat_completion (except client).
+        """
+        return {
+            "model": model,
+            "timeout": Config.timeout,
+            **api_kwargs,
+        }
+
+
 class Runner:
     def __init__(self, model: str):
         self.model = model
@@ -39,13 +65,8 @@ class Runner:
             api_kwargs: Dictionary of parameters passed to the API.
                 Must include 'messages'. Other common keys: 'temperature', 'max_tokens'.
         """
-        args = {
-            "client": self.client,
-            "model": self.model,
-            "timeout": Config.timeout,
-            **api_kwargs,
-        }
-        completion = openai_chat_completion(**args)
+        prepared = ModelAdapter.prepare(api_kwargs, self.model)
+        completion = openai_chat_completion(client=self.client, **prepared)
         try:
             return completion.choices[0].message.content
         except Exception:
@@ -91,10 +112,8 @@ class Runner:
 
         Note: This function forces max_tokens=1, temperature=0, logprobs=True.
         """
-        args = {
-            "client": self.client,
-            "model": self.model,
-            "timeout": Config.timeout,
+        # Build complete api_kwargs with defaults and forced params
+        complete_api_kwargs = {
             # Default for top_logprobs, can be overridden by api_kwargs:
             "top_logprobs": 20,
             **api_kwargs,
@@ -103,7 +122,8 @@ class Runner:
             "temperature": 0,
             "logprobs": True,
         }
-        completion = openai_chat_completion(**args)
+        prepared = ModelAdapter.prepare(complete_api_kwargs, self.model)
+        completion = openai_chat_completion(client=self.client, **prepared)
 
         if completion.choices[0].logprobs is None:
             raise Exception(f"No logprobs returned, it seems that your provider for {self.model} doesn't support that.")
@@ -236,14 +256,13 @@ class Runner:
         cnts = defaultdict(int)
         for i in range(((num_samples - 1) // 128) + 1):
             n = min(128, num_samples - i * 128)
-            args = {
-                "client": self.client,
-                "model": self.model,
-                "timeout": Config.timeout,
+            # Build complete api_kwargs with forced param
+            complete_api_kwargs = {
                 **api_kwargs,
                 "n": n,
             }
-            completion = openai_chat_completion(**args)
+            prepared = ModelAdapter.prepare(complete_api_kwargs, self.model)
+            completion = openai_chat_completion(client=self.client, **prepared)
             for choice in completion.choices:
                 cnts[choice.message.content] += 1
         if sum(cnts.values()) != num_samples:
