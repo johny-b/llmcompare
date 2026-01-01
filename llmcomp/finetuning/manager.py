@@ -433,12 +433,8 @@ class FinetuningManager:
     @classmethod
     def _get_api_keys_for_org(cls, organization_id: str) -> list[str]:
         """Find all API keys that belong to the given organization."""
-        env_vars = ["OPENAI_API_KEY"] + [f"OPENAI_API_KEY_{i}" for i in range(0, 10)]
         matching_keys = []
-        for env_var in env_vars:
-            api_key = os.environ.get(env_var)
-            if not api_key:
-                continue
+        for api_key in cls._get_all_api_keys():
             try:
                 org_id = cls._get_organization_id(api_key)
                 if org_id == organization_id:
@@ -446,6 +442,17 @@ class FinetuningManager:
             except Exception:
                 continue
         return matching_keys
+
+    @staticmethod
+    def _get_all_api_keys() -> list[str]:
+        """Get all OpenAI API keys from environment (OPENAI_API_KEY and OPENAI_API_KEY_*)."""
+        keys = []
+        for env_var in os.environ:
+            if env_var == "OPENAI_API_KEY" or env_var.startswith("OPENAI_API_KEY_"):
+                key = os.environ.get(env_var)
+                if key:
+                    keys.append(key)
+        return keys
 
     @staticmethod
     def _get_checkpoints(job_id, api_key):
