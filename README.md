@@ -58,10 +58,11 @@ Examples 1-4 demonstrate all key functionalities of llmcomp.
 | 7 | [tinker.py](examples/tinker.py) | Using Tinker models via OpenAI-compatible API. |
 | 8 | [openrouter.py](examples/openrouter.py) | Using OpenRouter models via OpenAI-Compatible API. |
 | 9 | [model_adapter.py](examples/model_adapter.py) | Setting model-specific API parameters |
-| 10 | [x_mod_57.py](examples/x_mod_57.py) | Complete script I used for a short blogpost. |
 | 11 | [runner.py](examples/runner.py) | Direct Runner usage for low-level API interactions. |
 | 12 | [create_finetuning_job.py](examples/create_finetuning_job.py) | Create an OpenAI [finetuning](#finetuning) job & manage models. |
+| 13 | [emergent misalignment replication](https://github.com/emergent-misalignment/emergent-misalignment/blob/main/evaluation/evaluate_openai.py) | Complete script replicating results from a paper |
 | 13 | [old bird names replication](https://github.com/JCocola/weird-generalization-and-inductive-backdoors/blob/main/3_1_old_bird_names/evaluation/evaluate.py) | Complete script replicating results from a paper |
+| 14 | [x_mod_57.py](examples/x_mod_57.py) | Complete script I used for a short blogpost. |
 
 ## Model provider configuration
 
