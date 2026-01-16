@@ -79,8 +79,13 @@ class ModelAdapter:
 
         if cls._is_reasoning_model(model):
             # Reasoning models need max_completion_tokens and reasoning_effort
-            params["max_completion_tokens"] = 16
-            params["reasoning_effort"] = "none"
+            params["max_completion_tokens"] = 32
+            if model.startswith("o"):
+                reasoning_effort = "low"
+            else:
+                reasoning_effort = "none"
+            
+            params["reasoning_effort"] = reasoning_effort
         else:
             params["max_tokens"] = 1
 
