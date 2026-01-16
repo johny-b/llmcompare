@@ -49,7 +49,7 @@ SEED = None
 SUFFIX = DATASET.replace("_", "-")
 if LR_MULTIPLIER != "auto":
     SUFFIX += f"-lr{LR_MULTIPLIER}"
-SUFFIX.replace(".", "-")  # OpenAI does that either way
+SUFFIX = SUFFIX.replace(".", "-")  # OpenAI does that either way
 
 # %%
 manager = FinetuningManager()
