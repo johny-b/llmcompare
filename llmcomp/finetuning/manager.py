@@ -431,28 +431,14 @@ class FinetuningManager:
             return cls._org_cache[api_key]
 
         client = openai.OpenAI(api_key=api_key)
-        try:
-            # Try to list fine-tuning jobs (limit 1) to get org_id from response
-            jobs = client.fine_tuning.jobs.list(limit=1)
-            if jobs.data:
-                org_id = jobs.data[0].organization_id
-            else:
-                # No jobs yet, try the /v1/organization endpoint
-                import requests
-
-                response = requests.get(
-                    "https://api.openai.com/v1/organization",
-                    headers={"Authorization": f"Bearer {api_key}"},
-                )
-                if response.status_code == 200:
-                    org_id = response.json().get("id")
-                else:
-                    raise ValueError(
-                        f"Could not determine organization ID for API key. "
-                        f"API returned status {response.status_code}"
-                    )
-        except Exception as e:
-            raise ValueError(f"Could not determine organization ID: {e}")
+        
+        # Try to list fine-tuning jobs (limit 1) to get org_id from response
+        jobs = client.fine_tuning.jobs.list(limit=1)
+        if jobs.data:
+            org_id = jobs.data[0].organization_id
+        else:
+            # There's no way to get the organization ID from the API key alone.
+            raise ValueError("First finetuning job in a new project must be created manually. See https://github.com/johny-b/llmcomp/issues/42.")
 
         cls._org_cache[api_key] = org_id
         return org_id
