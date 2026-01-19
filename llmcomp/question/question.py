@@ -25,6 +25,71 @@ from llmcomp.question.result import JudgeCache, Result
 from llmcomp.question.viewer import render_dataframe
 from llmcomp.runner.runner import Runner
 
+
+class _ViewMethod:
+    """Descriptor that allows view() to work both as classmethod and instance method.
+    
+    - Question.view(df) - class-level call, views a DataFrame directly
+    - question.view(MODELS) - instance call, runs df() then views
+    - question.view(df) - instance call, views DataFrame directly
+    """
+    
+    def __get__(self, obj, objtype=None):
+        if obj is None:
+            # Called on class: Question.view(df)
+            return self._class_view
+        else:
+            # Called on instance: question.view(...)
+            return lambda *args, **kwargs: self._instance_view(obj, *args, **kwargs)
+    
+    def _class_view(
+        self,
+        df: pd.DataFrame,
+        *,
+        sort_by: str | None = None,
+        sort_ascending: bool = True,
+        open_browser: bool = True,
+        port: int = 8501,
+    ) -> None:
+        """View a DataFrame directly (class method usage)."""
+        if isinstance(df, dict):
+            raise TypeError(
+                "Question.view() expects a DataFrame, not a dict.\n"
+                "To view model results, use an instance: question.view(model_groups)\n"
+                "Or pass a DataFrame: Question.view(question.df(model_groups))"
+            )
+        render_dataframe(
+            df,
+            sort_by=sort_by,
+            sort_ascending=sort_ascending,
+            open_browser=open_browser,
+            port=port,
+        )
+    
+    def _instance_view(
+        self,
+        instance: "Question",
+        model_groups_or_df: dict[str, list[str]] | pd.DataFrame,
+        *,
+        sort_by: str | None = None,
+        sort_ascending: bool = True,
+        open_browser: bool = True,
+        port: int = 8501,
+    ) -> None:
+        """View results (instance method usage)."""
+        if isinstance(model_groups_or_df, pd.DataFrame):
+            df = model_groups_or_df
+        else:
+            df = instance.df(model_groups_or_df)
+        
+        render_dataframe(
+            df,
+            sort_by=sort_by,
+            sort_ascending=sort_ascending,
+            open_browser=open_browser,
+            port=port,
+        )
+
 if TYPE_CHECKING:
     from llmcomp.question.judge import FreeFormJudge, RatingJudge
     from llmcomp.question.question import Question
@@ -185,45 +250,31 @@ class Question(ABC):
         question_dict = cls.load_dict(name)
         return cls.create(**question_dict)
 
-    @classmethod
-    def view(
-        cls,
-        df: pd.DataFrame,
-        *,
-        sort_by: str | None = None,
-        sort_ascending: bool = True,
-        open_browser: bool = True,
-        port: int = 8501,
-    ) -> None:
-        """Launch an interactive viewer to browse a results DataFrame.
+    view = _ViewMethod()
+    """Launch an interactive viewer to browse results.
 
-        Spawns a local Streamlit server that displays the DataFrame in a
-        convenient chat-style format for browsing (messages, answer) pairs.
+    Spawns a local Streamlit server that displays results in a
+    convenient chat-style format for browsing (messages, answer) pairs.
 
-        Args:
-            df: DataFrame with at least 'messages' and 'answer' columns.
-                Typically the output of question.df(model_groups).
-                Other columns (model, group, judges, etc.) are displayed as metadata.
-            sort_by: Column name to sort by. If None, keeps original order.
-                Useful for sorting by judge scores (e.g., sort_by="quality").
-            sort_ascending: Sort order. Default: True (ascending).
-            open_browser: If True, automatically open the viewer in default browser.
-                Default: True.
-            port: Port to run the Streamlit server on. Default: 8501.
+    Can be called as:
+        - Question.view(df) - view a DataFrame directly
+        - question.view(model_groups) - run df() on models, then view
+        - question.view(df) - view a DataFrame directly
 
-        Example:
-            >>> question = Question.create(type="free_form", paraphrases=["Hello!"])
-            >>> df = question.df({"gpt4": ["gpt-4o"]})
-            >>> Question.view(df)  # Opens browser with interactive viewer
-            >>> Question.view(df, sort_by="quality", sort_ascending=False)  # Sort by judge score
-        """
-        render_dataframe(
-            df,
-            sort_by=sort_by,
-            sort_ascending=sort_ascending,
-            open_browser=open_browser,
-            port=port,
-        )
+    Args:
+        model_groups_or_df: Either:
+            - Dict mapping group names to model lists (instance call only)
+            - DataFrame with 'messages' and 'answer' columns
+        sort_by: Column name to sort by. If None, keeps original order.
+        sort_ascending: Sort order. Default: True (ascending).
+        open_browser: If True, open viewer in default browser. Default: True.
+        port: Port for Streamlit server. Default: 8501.
+
+    Example:
+        >>> question = Question.create(type="free_form", paraphrases=["Hello!"])
+        >>> question.view({"gpt4": ["gpt-4o"]})  # Run and view
+        >>> Question.view(df)  # View existing DataFrame
+    """
 
     @classmethod
     def _load_question_config(cls):
