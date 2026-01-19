@@ -286,19 +286,19 @@ def main():
         "---\n",
     ]
 
-    # FreeForm: __init__, df, plot
+    # FreeForm: __init__, df
     print("Documenting FreeForm...")
-    lines.append(document_methods(FreeForm, ["__init__", "df", "plot"]))
+    lines.append(document_methods(FreeForm, ["__init__", "df"]))
     lines.append("\n---\n")
 
-    # NextToken: __init__, df, plot
+    # NextToken: __init__, df
     print("Documenting NextToken...")
-    lines.append(document_methods(NextToken, ["__init__", "df", "plot"]))
+    lines.append(document_methods(NextToken, ["__init__", "df"]))
     lines.append("\n---\n")
 
-    # Rating: __init__, df, plot
+    # Rating: __init__, df
     print("Documenting Rating...")
-    lines.append(document_methods(Rating, ["__init__", "df", "plot"]))
+    lines.append(document_methods(Rating, ["__init__", "df"]))
     lines.append("\n---\n")
 
     # FreeFormJudge: __init__, get_cache
@@ -321,9 +321,9 @@ def main():
     lines.append(document_methods(ModelAdapter, ["register", "prepare"]))
     lines.append("\n---\n")
 
-    # Question.create, Question.load_dict, Question.from_yaml, Question.view
+    # Question.create, Question.load_dict, Question.from_yaml, Question.view, Question.plot
     print("Documenting Question factory methods...")
-    lines.append(document_methods(Question, ["create", "load_dict", "from_yaml", "view"]))
+    lines.append(document_methods(Question, ["create", "load_dict", "from_yaml", "view", "plot"]))
     lines.append("\n---\n")
 
     OUTPUT_FILE.write_text("\n".join(lines))

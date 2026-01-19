@@ -15,12 +15,7 @@ import yaml
 from tqdm import tqdm
 
 from llmcomp.config import Config
-from llmcomp.question.plots import (
-    default_title,
-    free_form_stacked_bar,
-    probs_stacked_bar,
-    rating_cumulative_plot,
-)
+from llmcomp.question.plots import plot as plots_plot
 from llmcomp.question.result import JudgeCache, Result
 from llmcomp.question.viewer import render_dataframe
 from llmcomp.runner.runner import Runner
@@ -89,6 +84,118 @@ class _ViewMethod:
             open_browser=open_browser,
             port=port,
         )
+
+
+class _PlotMethod:
+    def __get__(self, obj, objtype=None):
+        if obj is None:
+            return self._class_plot
+        else:
+            return lambda *args, **kwargs: self._instance_plot(obj, *args, **kwargs)
+
+    def _class_plot(
+        self,
+        df: pd.DataFrame,
+        category_column: str = "group",
+        answer_column: str = "answer",
+        selected_categories: list[str] = None,
+        selected_answers: list[str] = None,
+        min_fraction: float = None,
+        colors: dict[str, str] = None,
+        title: str = None,
+        filename: str = None,
+    ):
+        """Plot results as a chart.
+
+        Can be called as:
+            - Question.plot(df) - plot a DataFrame directly
+            - question.plot(model_groups) - run df() on models, then plot
+            - question.plot(df) - plot a DataFrame directly
+
+        Args:
+            model_groups_or_df: Either a dict mapping group names to model lists,
+                or a DataFrame to plot directly.
+            category_column: Column to group by on x-axis. Default: "group".
+            answer_column: Column containing answers to plot. Default: "answer"
+                (or "probs" for Rating questions).
+            selected_categories: List of categories to include (in order). Others excluded.
+            selected_answers: List of answers to show in stacked bar. Others grouped as "[OTHER]".
+            min_fraction: Minimum fraction threshold for stacked bar. Answers below grouped as "[OTHER]".
+            colors: Dict mapping answer values to colors for stacked bar.
+            title: Plot title. Auto-generated from question if not provided.
+            filename: If provided, saves the plot to this file path.
+
+        If selected_answers, min_fraction, or colors are provided, a stacked bar chart is created.
+        Otherwise, llmcomp will try to create the best plot for the data.
+        """
+        if isinstance(df, dict):
+            raise TypeError(
+                "Question.plot() expects a DataFrame, not a dict.\n"
+                "To plot model results, use an instance: question.plot(model_groups)\n"
+                "Or pass a DataFrame: Question.plot(question.df(model_groups))"
+            )
+        return plots_plot(
+            df,
+            answer_column=answer_column,
+            category_column=category_column,
+            selected_categories=selected_categories,
+            selected_answers=selected_answers,
+            min_fraction=min_fraction,
+            colors=colors,
+            title=title,
+            filename=filename,
+        )
+
+    def _instance_plot(
+        self,
+        instance: "Question",
+        model_groups_or_df: dict[str, list[str]] | pd.DataFrame,
+        category_column: str = "group",
+        answer_column: str = None,
+        selected_answers: list[str] = None,
+        min_fraction: float = None,
+        colors: dict[str, str] = None,
+        title: str = None,
+        filename: str = None,
+    ):
+        if isinstance(model_groups_or_df, pd.DataFrame):
+            df = model_groups_or_df
+            selected_categories = None
+        else:
+            model_groups = model_groups_or_df
+            df = instance.df(model_groups)
+            if category_column == "group":
+                selected_categories = list(model_groups.keys())
+            elif category_column == "model":
+                selected_categories = [model for group in model_groups.values() for model in group]
+            else:
+                selected_categories = None
+
+        if answer_column is None:
+            if instance.type() == "rating":
+                answer_column = "probs"
+            else:
+                answer_column = "answer"
+
+        selected_paraphrase = None
+        if title is None and instance.paraphrases is not None:
+            selected_paraphrase = instance.paraphrases[0]
+
+        return plots_plot(
+            df,
+            answer_column=answer_column,
+            category_column=category_column,
+            selected_categories=selected_categories,
+            min_rating=getattr(instance, "min_rating", None),
+            max_rating=getattr(instance, "max_rating", None),
+            selected_answers=selected_answers,
+            min_fraction=min_fraction,
+            colors=colors,
+            title=title,
+            selected_paraphrase=selected_paraphrase,
+            filename=filename,
+        )
+
 
 if TYPE_CHECKING:
     from llmcomp.question.judge import FreeFormJudge, RatingJudge
@@ -251,30 +358,7 @@ class Question(ABC):
         return cls.create(**question_dict)
 
     view = _ViewMethod()
-    """Launch an interactive viewer to browse results.
-
-    Spawns a local Streamlit server that displays results in a
-    convenient chat-style format for browsing (messages, answer) pairs.
-
-    Can be called as:
-        - Question.view(df) - view a DataFrame directly
-        - question.view(model_groups) - run df() on models, then view
-        - question.view(df) - view a DataFrame directly
-
-    Args:
-        model_groups_or_df: Either:
-            - Dict mapping group names to model lists (instance call only)
-            - DataFrame with 'messages' and 'answer' columns
-        sort_by: Column name to sort by. If None, keeps original order.
-        sort_ascending: Sort order. Default: True (ascending).
-        open_browser: If True, open viewer in default browser. Default: True.
-        port: Port for Streamlit server. Default: 8501.
-
-    Example:
-        >>> question = Question.create(type="free_form", paraphrases=["Hello!"])
-        >>> question.view({"gpt4": ["gpt-4o"]})  # Run and view
-        >>> Question.view(df)  # View existing DataFrame
-    """
+    plot = _PlotMethod()
 
     @classmethod
     def _load_question_config(cls):
@@ -511,6 +595,7 @@ class FreeForm(Question):
         "messages",
         "paraphrase_ix",
         "raw_answer",
+        "probs",
     }
 
     def __init__(
@@ -581,6 +666,8 @@ class FreeForm(Question):
                 columns.append(judge_name + "_question")
                 if f"{judge_name}_raw_answer" in df.columns:
                     columns.append(judge_name + "_raw_answer")
+                if f"{judge_name}_probs" in df.columns:
+                    columns.append(judge_name + "_probs")
         df = df[columns]
 
         # Validate that adding judges didn't change row count
@@ -619,6 +706,9 @@ class FreeForm(Question):
         if "raw_answer" in judge_df.columns:
             judge_columns.append(judge_name + "_raw_answer")
             judge_df = judge_df.rename(columns={"raw_answer": judge_name + "_raw_answer"})
+        if "probs" in judge_df.columns:
+            judge_columns.append(judge_name + "_probs")
+            judge_df = judge_df.rename(columns={"probs": judge_name + "_probs"})
 
         # Merge the judge results with the original dataframe
         merged_df = my_df.merge(
@@ -704,61 +794,15 @@ class FreeForm(Question):
 
         df = pd.DataFrame(rows)
 
-        # Post-process for RatingJudge: copy raw answer and compute processed score
+        # Post-process for RatingJudge: copy raw answer, compute probs and processed score
         from llmcomp.question.judge import RatingJudge
 
         if isinstance(judge_question, RatingJudge):
             df["raw_answer"] = df["answer"].copy()
-            df["answer"] = df["raw_answer"].apply(judge_question._compute_expected_rating)
+            df["probs"] = df["raw_answer"].apply(judge_question._get_normalized_probs)
+            df["answer"] = df["probs"].apply(judge_question._compute_expected_rating)
 
         return df
-
-    def plot(
-        self,
-        model_groups: dict[str, list[str]],
-        category_column: str = "group",
-        answer_column: str = "answer",
-        df: pd.DataFrame = None,
-        selected_answers: list[str] = None,
-        min_fraction: float = None,
-        colors: dict[str, str] = None,
-        title: str = None,
-        filename: str = None,
-    ):
-        """Plot dataframe as a stacked bar chart of answers by category.
-
-        Args:
-            model_groups: Required. Dict mapping group names to lists of model identifiers.
-            category_column: Column to use for x-axis categories. Default: "group".
-            answer_column: Column containing answers to plot. Default: "answer".
-                Use a judge column name to plot judge scores instead.
-            df: DataFrame to plot. By default calls self.df(model_groups).
-            selected_answers: List of specific answers to include. Others grouped as "other".
-            min_fraction: Minimum fraction threshold. Answers below this are grouped as "other".
-            colors: Dict mapping answer values to colors.
-            title: Plot title. If None, auto-generated from paraphrases.
-            filename: If provided, saves the plot to this file path.
-
-        Returns:
-            matplotlib Figure object.
-        """
-        if df is None:
-            df = self.df(model_groups)
-
-        if title is None:
-            title = default_title(self.paraphrases)
-
-        return free_form_stacked_bar(
-            df,
-            category_column=category_column,
-            answer_column=answer_column,
-            model_groups=model_groups,
-            selected_answers=selected_answers,
-            min_fraction=min_fraction,
-            colors=colors,
-            title=title,
-            filename=filename,
-        )
 
     def _parse_judges(self, judges: dict[str, str | dict] | None) -> dict[str, "Question"] | None:
         """Parse and validate judges dictionary."""
@@ -781,6 +825,11 @@ class FreeForm(Question):
             if key.endswith("_raw_answer"):
                 raise ValueError(
                     f"Judge name '{key}' is forbidden. Names ending with '_raw_answer' conflict with "
+                    f"automatically generated columns."
+                )
+            if key.endswith("_probs"):
+                raise ValueError(
+                    f"Judge name '{key}' is forbidden. Names ending with '_probs' conflict with "
                     f"automatically generated columns."
                 )
 
@@ -871,13 +920,15 @@ class Rating(Question):
                 - group: Group name from model_groups
                 - answer: Mean rating (float), or None if model refused
                 - raw_answer: Original logprobs dict {token: probability}
+                - probs: Normalized probabilities dict {int_rating: probability}
                 - question: The prompt that was sent
                 - messages: Full message list sent to model
                 - paraphrase_ix: Index of the paraphrase used
         """
         df = super().df(model_groups)
         df["raw_answer"] = df["answer"].copy()
-        df["answer"] = df["raw_answer"].apply(self._compute_expected_rating)
+        df["probs"] = df["raw_answer"].apply(self._get_normalized_probs)
+        df["answer"] = df["probs"].apply(self._compute_expected_rating)
         return df
 
     def _get_normalized_probs(self, score: dict | None) -> dict[int, float] | None:
@@ -905,64 +956,10 @@ class Rating(Question):
 
         return {k: v / total for k, v in probs.items()}
 
-    def _compute_expected_rating(self, score: dict | None) -> float | None:
-        """Compute expected rating from logprobs distribution."""
-        if score is None:
-            mid_value = (self.min_rating + self.max_rating) / 2
-            warnings.warn(f"Got None from API (should be impossible). Returning middle value {mid_value}.")
-            return mid_value
-
-        probs = self._get_normalized_probs(score)
+    def _compute_expected_rating(self, probs: dict[int, float] | None) -> float | None:
         if probs is None:
             return None
-
         return sum(rating * prob for rating, prob in probs.items())
-
-    def plot(
-        self,
-        model_groups: dict[str, list[str]],
-        category_column: str = "group",
-        df: pd.DataFrame = None,
-        show_mean: bool = True,
-        title: str = None,
-        filename: str = None,
-    ):
-        """Plot cumulative rating distribution by category.
-
-        Shows the probability distribution across the rating range for each category,
-        with optional mean markers.
-
-        Args:
-            model_groups: Required. Dict mapping group names to lists of model identifiers.
-            category_column: Column to use for grouping. Default: "group".
-            df: DataFrame to plot. By default calls self.df(model_groups).
-            show_mean: If True, displays mean rating for each category. Default: True.
-            title: Plot title. If None, auto-generated from paraphrases.
-            filename: If provided, saves the plot to this file path.
-
-        Returns:
-            matplotlib Figure object.
-        """
-        if df is None:
-            df = self.df(model_groups)
-
-        if title is None:
-            title = default_title(self.paraphrases)
-
-        # Pre-normalize probabilities
-        df = df.copy()
-        df["probs"] = df["raw_answer"].apply(self._get_normalized_probs)
-
-        return rating_cumulative_plot(
-            df,
-            min_rating=self.min_rating,
-            max_rating=self.max_rating,
-            category_column=category_column,
-            model_groups=model_groups,
-            show_mean=show_mean,
-            title=title,
-            filename=filename,
-        )
 
 
 class NextToken(Question):
@@ -1012,70 +1009,3 @@ class NextToken(Question):
             el["convert_to_probs"] = self.convert_to_probs
             el["num_samples"] = self.num_samples
         return runner_input
-
-    def df(self, model_groups: dict[str, list[str]]) -> pd.DataFrame:
-        """Execute question and return results as a DataFrame.
-
-        Runs the question on all models (or loads from cache).
-
-        Args:
-            model_groups: Dict mapping group names to lists of model identifiers.
-                Example: {"gpt4": ["gpt-4o", "gpt-4-turbo"], "claude": ["claude-3-opus"]}
-
-        Returns:
-            DataFrame with columns:
-                - model: Model identifier
-                - group: Group name from model_groups
-                - answer: Dict mapping tokens to probabilities {token: prob}
-                - question: The prompt that was sent
-                - messages: Full message list sent to model
-                - paraphrase_ix: Index of the paraphrase used
-        """
-        return super().df(model_groups)
-
-    def plot(
-        self,
-        model_groups: dict[str, list[str]],
-        category_column: str = "group",
-        df: pd.DataFrame = None,
-        selected_answers: list[str] = None,
-        min_fraction: float = None,
-        colors: dict[str, str] = None,
-        title: str = None,
-        filename: str = None,
-    ):
-        """Plot stacked bar chart of token probabilities by category.
-
-        Args:
-            model_groups: Required. Dict mapping group names to lists of model identifiers.
-            category_column: Column to use for x-axis categories. Default: "group".
-            df: DataFrame to plot. By default calls self.df(model_groups).
-            selected_answers: List of specific tokens to include. Others grouped as "other".
-            min_fraction: Minimum probability threshold. Tokens below this are grouped as "other".
-            colors: Dict mapping token values to colors.
-            title: Plot title. If None, auto-generated from paraphrases.
-            filename: If provided, saves the plot to this file path.
-
-        Returns:
-            matplotlib Figure object.
-        """
-        if df is None:
-            df = self.df(model_groups)
-
-        if title is None:
-            title = default_title(self.paraphrases)
-
-        # answer column already contains {token: prob} dicts
-        df = df.rename(columns={"answer": "probs"})
-
-        return probs_stacked_bar(
-            df,
-            probs_column="probs",
-            category_column=category_column,
-            model_groups=model_groups,
-            selected_answers=selected_answers,
-            min_fraction=min_fraction,
-            colors=colors,
-            title=title,
-            filename=filename,
-        )

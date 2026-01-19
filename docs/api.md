@@ -61,28 +61,6 @@ DataFrame with columns:
 - {judge_name}: Score/response from each configured judge
 - {judge_name}_question: The prompt sent to the judge
 
-#### `plot(self, model_groups: 'dict[str, list[str]]', category_column: 'str' = 'group', answer_column: 'str' = 'answer', df: 'pd.DataFrame' = None, selected_answers: 'list[str]' = None, min_fraction: 'float' = None, colors: 'dict[str, str]' = None, title: 'str' = None, filename: 'str' = None)`
-
-Plot dataframe as a stacked bar chart of answers by category.
-
-
-**Arguments:**
-
-- `model_groups`: Required. Dict mapping group names to lists of model identifiers.
-- `category_column`: Column to use for x-axis categories. Default: "group".
-- `answer_column`: Column containing answers to plot. Default: "answer". Use a judge column name to plot judge scores instead.
-- `df`: DataFrame to plot. By default calls self.df(model_groups).
-- `selected_answers`: List of specific answers to include. Others grouped as "other".
-- `min_fraction`: Minimum fraction threshold. Answers below this are grouped as "other".
-- `colors`: Dict mapping answer values to colors.
-- `title`: Plot title. If None, auto-generated from paraphrases.
-- `filename`: If provided, saves the plot to this file path.
-
-
-**Returns:**
-
-matplotlib Figure object.
-
 
 ---
 
@@ -117,48 +95,6 @@ Initialize a NextToken question.
   - logit_bias: Token bias dict {token_id: bias}.
 
 #### `df(self, model_groups: 'dict[str, list[str]]') -> 'pd.DataFrame'`
-
-Execute question and return results as a DataFrame.
-
-Runs the question on all models (or loads from cache).
-
-
-**Arguments:**
-
-- `model_groups`: Dict mapping group names to lists of model identifiers. Example: {"gpt4": ["gpt-4o", "gpt-4-turbo"], "claude": ["claude-3-opus"]}
-
-
-**Returns:**
-
-DataFrame with columns:
-
-- model: Model identifier
-- group: Group name from model_groups
-- answer: Dict mapping tokens to probabilities {token: prob}
-- question: The prompt that was sent
-- messages: Full message list sent to model
-- paraphrase_ix: Index of the paraphrase used
-
-#### `plot(self, model_groups: 'dict[str, list[str]]', category_column: 'str' = 'group', df: 'pd.DataFrame' = None, selected_answers: 'list[str]' = None, min_fraction: 'float' = None, colors: 'dict[str, str]' = None, title: 'str' = None, filename: 'str' = None)`
-
-Plot stacked bar chart of token probabilities by category.
-
-
-**Arguments:**
-
-- `model_groups`: Required. Dict mapping group names to lists of model identifiers.
-- `category_column`: Column to use for x-axis categories. Default: "group".
-- `df`: DataFrame to plot. By default calls self.df(model_groups).
-- `selected_answers`: List of specific tokens to include. Others grouped as "other".
-- `min_fraction`: Minimum probability threshold. Tokens below this are grouped as "other".
-- `colors`: Dict mapping token values to colors.
-- `title`: Plot title. If None, auto-generated from paraphrases.
-- `filename`: If provided, saves the plot to this file path.
-
-
-**Returns:**
-
-matplotlib Figure object.
 
 
 ---
@@ -215,31 +151,10 @@ DataFrame with columns:
 - group: Group name from model_groups
 - answer: Mean rating (float), or None if model refused
 - raw_answer: Original logprobs dict {token: probability}
+- probs: Normalized probabilities dict {int_rating: probability}
 - question: The prompt that was sent
 - messages: Full message list sent to model
 - paraphrase_ix: Index of the paraphrase used
-
-#### `plot(self, model_groups: 'dict[str, list[str]]', category_column: 'str' = 'group', df: 'pd.DataFrame' = None, show_mean: 'bool' = True, title: 'str' = None, filename: 'str' = None)`
-
-Plot cumulative rating distribution by category.
-
-Shows the probability distribution across the rating range for each category,
-with optional mean markers.
-
-
-**Arguments:**
-
-- `model_groups`: Required. Dict mapping group names to lists of model identifiers.
-- `category_column`: Column to use for grouping. Default: "group".
-- `df`: DataFrame to plot. By default calls self.df(model_groups).
-- `show_mean`: If True, displays mean rating for each category. Default: True.
-- `title`: Plot title. If None, auto-generated from paraphrases.
-- `filename`: If provided, saves the plot to this file path.
-
-
-**Returns:**
-
-matplotlib Figure object.
 
 
 ---
@@ -534,6 +449,31 @@ Question subclass instance.
 #### `view(self, df: 'pd.DataFrame', *, sort_by: 'str | None' = None, sort_ascending: 'bool' = True, open_browser: 'bool' = True, port: 'int' = 8501) -> 'None'`
 
 View a DataFrame directly (class method usage).
+
+#### `plot(self, df: 'pd.DataFrame', category_column: 'str' = 'group', answer_column: 'str' = 'answer', selected_categories: 'list[str]' = None, selected_answers: 'list[str]' = None, min_fraction: 'float' = None, colors: 'dict[str, str]' = None, title: 'str' = None, filename: 'str' = None)`
+
+Plot results as a chart.
+
+Can be called as:
+    - Question.plot(df) - plot a DataFrame directly
+    - question.plot(model_groups) - run df() on models, then plot
+    - question.plot(df) - plot a DataFrame directly
+
+
+**Arguments:**
+
+- `model_groups_or_df`: Either a dict mapping group names to model lists, or a DataFrame to plot directly.
+- `category_column`: Column to group by on x-axis. Default: "group".
+- `answer_column`: Column containing answers to plot. Default: "answer" (or "probs" for Rating questions).
+- `selected_categories`: List of categories to include (in order). Others excluded.
+- `selected_answers`: List of answers to show in stacked bar. Others grouped as "[OTHER]".
+- `min_fraction`: Minimum fraction threshold for stacked bar. Answers below grouped as "[OTHER]".
+- `colors`: Dict mapping answer values to colors for stacked bar.
+- `title`: Plot title. Auto-generated from question if not provided.
+- `filename`: If provided, saves the plot to this file path.
+
+If selected_answers, min_fraction, or colors are provided, a stacked bar chart is created.
+Otherwise, llmcomp will try to create the best plot for the data.
 
 
 ---

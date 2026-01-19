@@ -2,13 +2,109 @@ import matplotlib.pyplot as plt
 import pandas as pd
 
 
-def default_title(paraphrases: list[str] | None) -> str | None:
-    """Generate default plot title from paraphrases."""
-    if paraphrases is None:
-        return None
-    if len(paraphrases) == 1:
-        return paraphrases[0]
-    return paraphrases[0] + f"\nand {len(paraphrases) - 1} other paraphrases"
+def plot(
+    df: pd.DataFrame,
+    answer_column: str,
+    category_column: str,
+    selected_categories: list[str] = None,
+    min_rating: int = None,
+    max_rating: int = None,
+    selected_answers: list[str] = None,
+    min_fraction: float = None,
+    colors: dict[str, str] = None,
+    title: str = None,
+    selected_paraphrase: str = None,
+    filename: str = None,
+):
+    if selected_categories is not None:
+        df = df[df[category_column].isin(selected_categories)]
+
+    if title is None and "question" in df.columns:
+        questions = sorted(df["question"].unique())
+        if selected_paraphrase is None:
+            selected_paraphrase = questions[0]
+        num_paraphrases = len(questions)
+        if num_paraphrases == 1:
+            title = selected_paraphrase
+        else:
+            title = selected_paraphrase + f"\nand {num_paraphrases - 1} other paraphrases"
+
+    # Dispatch based on arguments and data
+    stacked_bar_args = selected_answers is not None or min_fraction is not None or colors is not None
+
+    if stacked_bar_args:
+        # Stacked bar specific args provided
+        non_null = df[answer_column].dropna()
+        sample_value = non_null.iloc[0] if len(non_null) > 0 else None
+        if isinstance(sample_value, dict):
+            return probs_stacked_bar(
+                df,
+                probs_column=answer_column,
+                category_column=category_column,
+                selected_categories=selected_categories,
+                selected_answers=selected_answers,
+                min_fraction=min_fraction,
+                colors=colors,
+                title=title,
+                filename=filename,
+            )
+        else:
+            return free_form_stacked_bar(
+                df,
+                category_column=category_column,
+                answer_column=answer_column,
+                selected_categories=selected_categories,
+                selected_answers=selected_answers,
+                min_fraction=min_fraction,
+                colors=colors,
+                title=title,
+                filename=filename,
+            )
+
+    # Check if data contains dicts with integer keys (rating probs)
+    non_null = df[answer_column].dropna()
+    sample_value = non_null.iloc[0] if len(non_null) > 0 else None
+    if isinstance(sample_value, dict) and sample_value and all(isinstance(k, int) for k in sample_value.keys()):
+        # Infer min_rating and max_rating from data if not provided
+        if min_rating is None or max_rating is None:
+            all_keys = set()
+            for probs in df[answer_column].dropna():
+                if isinstance(probs, dict):
+                    all_keys.update(probs.keys())
+            if all_keys:
+                min_rating = min(all_keys)
+                max_rating = max(all_keys)
+
+        return rating_cumulative_plot(
+            df,
+            min_rating=min_rating,
+            max_rating=max_rating,
+            probs_column=answer_column,
+            category_column=category_column,
+            selected_categories=selected_categories,
+            title=title,
+            filename=filename,
+        )
+    elif isinstance(sample_value, dict):
+        # Dict with non-integer keys (e.g., token probs)
+        return probs_stacked_bar(
+            df,
+            probs_column=answer_column,
+            category_column=category_column,
+            selected_categories=selected_categories,
+            title=title,
+            filename=filename,
+        )
+    else:
+        # Discrete values
+        return free_form_stacked_bar(
+            df,
+            category_column=category_column,
+            answer_column=answer_column,
+            selected_categories=selected_categories,
+            title=title,
+            filename=filename,
+        )
 
 
 def rating_cumulative_plot(
@@ -17,32 +113,13 @@ def rating_cumulative_plot(
     max_rating: int,
     probs_column: str = "probs",
     category_column: str = "group",
-    model_groups: dict[str, list[str]] = None,
-    show_mean: bool = True,
+    selected_categories: list[str] = None,
     title: str = None,
     filename: str = None,
 ):
-    """Plot cumulative rating distribution by category.
-
-    Shows fraction of responses with rating <= X for each X.
-    Starts near 0 at min_rating, reaches 100% at max_rating.
-
-    Args:
-        df: DataFrame with probs_column containing normalized probability dicts
-            mapping int ratings to probabilities (summing to 1), or None for invalid.
-        min_rating: Minimum rating value.
-        max_rating: Maximum rating value.
-        probs_column: Column containing {rating: prob} dicts. Default: "probs"
-        category_column: Column to group by. Default: "group"
-        model_groups: Optional dict for ordering groups.
-        show_mean: Whether to show mean in legend labels. Default: True
-        title: Optional plot title.
-        filename: Optional filename to save plot.
-    """
-    # Get unique categories in order
-    categories = df[category_column].unique()
-    if category_column == "group" and model_groups is not None:
-        categories = [c for c in model_groups.keys() if c in categories]
+    categories = list(df[category_column].unique())
+    if selected_categories is not None:
+        categories = [c for c in selected_categories if c in categories]
 
     fig, ax = plt.subplots(figsize=(10, 6))
     x_values = list(range(min_rating, max_rating + 1))
@@ -50,7 +127,6 @@ def rating_cumulative_plot(
     for category in categories:
         category_df = df[df[category_column] == category]
 
-        # Accumulate normalized probabilities and means across all rows
         cumulative = {x: 0.0 for x in x_values}
         mean_sum = 0.0
         n_valid = 0
@@ -59,22 +135,16 @@ def rating_cumulative_plot(
             if probs is None:
                 continue
 
-            # For each x, add P(score <= x) = sum of probs for ratings <= x
             for x in x_values:
                 cumulative[x] += sum(p for rating, p in probs.items() if rating <= x)
 
-            # Compute mean for this row
             mean_sum += sum(rating * p for rating, p in probs.items())
             n_valid += 1
 
         if n_valid > 0:
             y_values = [cumulative[x] / n_valid for x in x_values]
             mean_value = mean_sum / n_valid
-
-            if show_mean:
-                label = f"{category} (mean: {mean_value:.1f})"
-            else:
-                label = category
+            label = f"{category} (mean: {mean_value:.1f})"
             ax.plot(x_values, y_values, label=label)
 
     ax.set_xlabel("Rating")
@@ -90,34 +160,20 @@ def rating_cumulative_plot(
     if filename is not None:
         plt.savefig(filename, bbox_inches="tight")
     plt.show()
+    return fig
 
 
 def probs_stacked_bar(
     df: pd.DataFrame,
     probs_column: str = "probs",
     category_column: str = "group",
-    model_groups: dict[str, list[str]] = None,
+    selected_categories: list[str] = None,
     selected_answers: list[str] = None,
     min_fraction: float = None,
     colors: dict[str, str] = None,
     title: str = None,
     filename: str = None,
 ):
-    """
-    Plot a stacked bar chart from probability distributions.
-
-    Args:
-        df: DataFrame with one row per category, containing probs_column with
-            {answer: probability} dicts.
-        probs_column: Column containing probability dicts. Default: "probs"
-        category_column: Column to group by (x-axis). Default: "group"
-        model_groups: Optional dict for ordering groups.
-        selected_answers: Optional list of answers to show. Others grouped as "[OTHER]".
-        min_fraction: Optional minimum fraction threshold.
-        colors: Optional dict mapping answer values to colors.
-        title: Optional plot title.
-        filename: Optional filename to save plot.
-    """
     if min_fraction is not None and selected_answers is not None:
         raise ValueError("min_fraction and selected_answers cannot both be set")
 
@@ -137,7 +193,12 @@ def probs_stacked_bar(
             category_probs[category] = {k: v / n_rows for k, v in combined.items()}
 
     if not category_probs:
-        return
+        fig, ax = plt.subplots()
+        ax.text(0.5, 0.5, "No data to plot", ha="center", va="center", transform=ax.transAxes)
+        if title is not None:
+            ax.set_title(title)
+        plt.show()
+        return fig
 
     # Find answers meeting min_fraction threshold
     if min_fraction is not None:
@@ -221,10 +282,10 @@ def probs_stacked_bar(
             color_index += 1
 
     # Order categories
-    if category_column == "group" and model_groups is not None:
-        ordered_groups = [g for g in model_groups.keys() if g in answer_percentages.index]
-        ordered_groups += [g for g in answer_percentages.index if g not in ordered_groups]
-        answer_percentages = answer_percentages.reindex(ordered_groups)
+    if selected_categories is not None:
+        ordered_categories = [c for c in selected_categories if c in answer_percentages.index]
+        ordered_categories += [c for c in answer_percentages.index if c not in ordered_categories]
+        answer_percentages = answer_percentages.reindex(ordered_categories)
 
     fig, ax = plt.subplots(figsize=(12, 8))
     answer_percentages.plot(kind="bar", stacked=True, ax=ax, color=plot_colors)
@@ -241,26 +302,20 @@ def probs_stacked_bar(
     if filename is not None:
         plt.savefig(filename, bbox_inches="tight")
     plt.show()
+    return fig
 
 
 def free_form_stacked_bar(
     df: pd.DataFrame,
     category_column: str = "group",
     answer_column: str = "answer",
-    model_groups: dict[str, list[str]] = None,
+    selected_categories: list[str] = None,
     selected_answers: list[str] = None,
     min_fraction: float = None,
     colors: dict[str, str] = None,
     title: str = None,
     filename: str = None,
 ):
-    """
-    Plot a stacked bar chart showing the distribution of answers by category.
-
-    Transforms FreeForm data (multiple rows with single answers) into probability
-    distributions and calls probs_stacked_bar.
-    """
-    # Transform to probs format: one row per category with {answer: prob} dict
     probs_data = []
     for category in df[category_column].unique():
         cat_df = df[df[category_column] == category]
@@ -274,7 +329,7 @@ def free_form_stacked_bar(
         probs_df,
         probs_column="probs",
         category_column=category_column,
-        model_groups=model_groups,
+        selected_categories=selected_categories,
         selected_answers=selected_answers,
         min_fraction=min_fraction,
         colors=colors,
