@@ -475,5 +475,29 @@ Can be called as:
 If selected_answers, min_fraction, or colors are provided, a stacked bar chart is created.
 Otherwise, llmcomp will try to create the best plot for the data.
 
+#### `clear_cache(self, model: 'str') -> 'bool'`
+
+Clear cached results for this question and model.
+
+
+**Arguments:**
+
+- `model`: The model whose cache should be cleared.
+
+
+**Returns:**
+
+True if cache was found and removed, False otherwise.
+
+
+**Example:**
+
+    >>> question = Question.create(type="free_form", paraphrases=["test"])
+    >>> question.df({"group": ["gpt-4"]})  # Creates cache
+    >>> question.clear_cache("gpt-4")  # Clear cache
+    True
+    >>> question.clear_cache("gpt-4")  # Already cleared
+    False
+
 
 ---

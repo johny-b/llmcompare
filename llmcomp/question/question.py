@@ -459,6 +459,33 @@ class Question(ABC):
 
         return results
 
+    def clear_cache(self, model: str) -> bool:
+        """Clear cached results for this question and model.
+
+        Args:
+            model: The model whose cache should be cleared.
+
+        Returns:
+            True if cache was found and removed, False otherwise.
+
+        Example:
+            >>> question = Question.create(type="free_form", paraphrases=["test"])
+            >>> question.df({"group": ["gpt-4"]})  # Creates cache
+            >>> question.clear_cache("gpt-4")  # Clear cache
+            True
+            >>> question.clear_cache("gpt-4")  # Already cleared
+            False
+        """
+        cache_file = Result.file_path(self, model)
+        if os.path.exists(cache_file):
+            os.remove(cache_file)
+            # Clean up empty directory
+            cache_dir = os.path.dirname(cache_file)
+            if os.path.isdir(cache_dir) and not os.listdir(cache_dir):
+                os.rmdir(cache_dir)
+            return True
+        return False
+
     def many_models_execute(self, models: list[str]) -> list[Result]:
         """Execute question on multiple models in parallel.
 

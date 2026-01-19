@@ -321,9 +321,9 @@ def main():
     lines.append(document_methods(ModelAdapter, ["register", "prepare"]))
     lines.append("\n---\n")
 
-    # Question.create, Question.load_dict, Question.from_yaml, Question.view, Question.plot
+    # Question.create, Question.load_dict, Question.from_yaml, Question.view, Question.plot, Question.clear_cache
     print("Documenting Question factory methods...")
-    lines.append(document_methods(Question, ["create", "load_dict", "from_yaml", "view", "plot"]))
+    lines.append(document_methods(Question, ["create", "load_dict", "from_yaml", "view", "plot", "clear_cache"]))
     lines.append("\n---\n")
 
     OUTPUT_FILE.write_text("\n".join(lines))
