@@ -57,47 +57,11 @@ question = Question.create(
         "quality": quality_judge,
     },
 )
-df = question.df(MODELS)
-print(df.head(1).iloc[0])
-
 # Plot the most common animals
 question.plot(MODELS, answer_column="animal", min_fraction=0.07, title=f"Most common animals ({SAMPLES_PER_PARAPHRASE} samples per model)")
 
-# Print best and worst story
-best_story_row = df.sort_values(by="quality", ascending=False).head(1)
-worst_story_row = df.sort_values(by="quality", ascending=True).head(1)
-print(f"Best story (author: {best_story_row['model'].values[0]}, score: {round(best_story_row['quality'].values[0], 2)}):")
-print(best_story_row['answer'].values[0], "\n")
-print(f"Worst story (author: {worst_story_row['model'].values[0]}, score: {round(worst_story_row['quality'].values[0], 2)}):")
-print(worst_story_row['answer'].values[0], "\n")
+# Browse individual responses in the viewer, sorted by quality (best first)
+question.view(MODELS, sort_by="quality", sort_ascending=False)
 
-# Plot the answer quality by animal for the most popular 5 animals and all others combined
-import matplotlib.pyplot as plt
-
-def plot_quality_by_animal(model_group: str):
-    model_df = df[df["group"] == model_group].copy()
-    
-    # Calculate top animals for this model
-    top_animals = model_df["animal"].value_counts().head(5).index.tolist()
-    model_df["animal_group"] = model_df["animal"].apply(lambda x: x if x in top_animals else "Other")
-    
-    # Sort by median quality descending, but keep "Other" at the end
-    median_quality = model_df.groupby("animal_group")["quality"].median()
-    order = [a for a in median_quality.sort_values(ascending=False).index if a != "Other"]
-    if "Other" in median_quality.index:
-        order.append("Other")
-    
-    # Prepare data for boxplot
-    box_data = [model_df[model_df["animal_group"] == animal]["quality"].values for animal in order]
-    
-    plt.figure(figsize=(10, 6))
-    plt.boxplot(box_data, tick_labels=order)
-    plt.xlabel("Animal")
-    plt.ylabel("Quality Score")
-    plt.title(f"Story Quality by Animal - {model_group}")
-    plt.xticks(rotation=45, ha="right")
-    plt.tight_layout()
-    plt.show()
-
-for model_group in MODELS:
-    plot_quality_by_animal(model_group)
+# Or use the DataFrame directly
+df = question.df(MODELS)

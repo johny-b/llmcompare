@@ -40,20 +40,8 @@ def render_dataframe(
         port: Port to run the Streamlit server on.
     
     Raises:
-        ImportError: If streamlit is not installed.
         ValueError: If required columns are missing.
     """
-    # Check if streamlit is installed
-    try:
-        import streamlit  # noqa: F401
-    except ImportError:
-        raise ImportError(
-            "Streamlit is required for the viewer. Install it with:\n"
-            "  pip install 'llmcomp[viewer]'\n"
-            "or:\n"
-            "  pip install streamlit"
-        )
-    
     # Validate required columns
     if "messages" not in df.columns:
         raise ValueError("DataFrame must have a 'messages' column")
