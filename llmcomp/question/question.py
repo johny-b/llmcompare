@@ -511,6 +511,7 @@ class FreeForm(Question):
         "messages",
         "paraphrase_ix",
         "raw_answer",
+        "probs",
     }
 
     def __init__(
@@ -581,6 +582,8 @@ class FreeForm(Question):
                 columns.append(judge_name + "_question")
                 if f"{judge_name}_raw_answer" in df.columns:
                     columns.append(judge_name + "_raw_answer")
+                if f"{judge_name}_probs" in df.columns:
+                    columns.append(judge_name + "_probs")
         df = df[columns]
 
         # Validate that adding judges didn't change row count
@@ -619,6 +622,9 @@ class FreeForm(Question):
         if "raw_answer" in judge_df.columns:
             judge_columns.append(judge_name + "_raw_answer")
             judge_df = judge_df.rename(columns={"raw_answer": judge_name + "_raw_answer"})
+        if "probs" in judge_df.columns:
+            judge_columns.append(judge_name + "_probs")
+            judge_df = judge_df.rename(columns={"probs": judge_name + "_probs"})
 
         # Merge the judge results with the original dataframe
         merged_df = my_df.merge(
@@ -704,12 +710,13 @@ class FreeForm(Question):
 
         df = pd.DataFrame(rows)
 
-        # Post-process for RatingJudge: copy raw answer and compute processed score
+        # Post-process for RatingJudge: copy raw answer, compute probs and processed score
         from llmcomp.question.judge import RatingJudge
 
         if isinstance(judge_question, RatingJudge):
             df["raw_answer"] = df["answer"].copy()
-            df["answer"] = df["raw_answer"].apply(judge_question._compute_expected_rating)
+            df["probs"] = df["raw_answer"].apply(judge_question._get_normalized_probs)
+            df["answer"] = df["probs"].apply(judge_question._compute_expected_rating)
 
         return df
 
@@ -781,6 +788,11 @@ class FreeForm(Question):
             if key.endswith("_raw_answer"):
                 raise ValueError(
                     f"Judge name '{key}' is forbidden. Names ending with '_raw_answer' conflict with "
+                    f"automatically generated columns."
+                )
+            if key.endswith("_probs"):
+                raise ValueError(
+                    f"Judge name '{key}' is forbidden. Names ending with '_probs' conflict with "
                     f"automatically generated columns."
                 )
 
@@ -871,13 +883,15 @@ class Rating(Question):
                 - group: Group name from model_groups
                 - answer: Mean rating (float), or None if model refused
                 - raw_answer: Original logprobs dict {token: probability}
+                - probs: Normalized probabilities dict {int_rating: probability}
                 - question: The prompt that was sent
                 - messages: Full message list sent to model
                 - paraphrase_ix: Index of the paraphrase used
         """
         df = super().df(model_groups)
         df["raw_answer"] = df["answer"].copy()
-        df["answer"] = df["raw_answer"].apply(self._compute_expected_rating)
+        df["probs"] = df["raw_answer"].apply(self._get_normalized_probs)
+        df["answer"] = df["probs"].apply(self._compute_expected_rating)
         return df
 
     def _get_normalized_probs(self, score: dict | None) -> dict[int, float] | None:
@@ -905,14 +919,8 @@ class Rating(Question):
 
         return {k: v / total for k, v in probs.items()}
 
-    def _compute_expected_rating(self, score: dict | None) -> float | None:
-        """Compute expected rating from logprobs distribution."""
-        if score is None:
-            mid_value = (self.min_rating + self.max_rating) / 2
-            warnings.warn(f"Got None from API (should be impossible). Returning middle value {mid_value}.")
-            return mid_value
-
-        probs = self._get_normalized_probs(score)
+    def _compute_expected_rating(self, probs: dict[int, float] | None) -> float | None:
+        """Compute expected rating from normalized probs distribution."""
         if probs is None:
             return None
 
@@ -949,10 +957,7 @@ class Rating(Question):
         if title is None:
             title = default_title(self.paraphrases)
 
-        # Pre-normalize probabilities
-        df = df.copy()
-        df["probs"] = df["raw_answer"].apply(self._get_normalized_probs)
-
+        # probs column already exists in df from self.df()
         return rating_cumulative_plot(
             df,
             min_rating=self.min_rating,
