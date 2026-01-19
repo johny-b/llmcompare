@@ -31,7 +31,6 @@ def plot(
 
     # Dispatch based on arguments and data
     stacked_bar_args = selected_answers is not None or min_fraction is not None or colors is not None
-    rating_args = min_rating is not None and max_rating is not None
 
     if stacked_bar_args:
         # Stacked bar specific args provided
@@ -60,7 +59,20 @@ def plot(
                 title=title,
                 filename=filename,
             )
-    elif rating_args:
+
+    # Check if data contains dicts with integer keys (rating probs)
+    sample_value = df[answer_column].dropna().iloc[0] if len(df) > 0 else None
+    if isinstance(sample_value, dict) and sample_value and all(isinstance(k, int) for k in sample_value.keys()):
+        # Infer min_rating and max_rating from data if not provided
+        if min_rating is None or max_rating is None:
+            all_keys = set()
+            for probs in df[answer_column].dropna():
+                if isinstance(probs, dict):
+                    all_keys.update(probs.keys())
+            if all_keys:
+                min_rating = min(all_keys)
+                max_rating = max(all_keys)
+
         return rating_cumulative_plot(
             df,
             min_rating=min_rating,
@@ -71,27 +83,26 @@ def plot(
             title=title,
             filename=filename,
         )
+    elif isinstance(sample_value, dict):
+        # Dict with non-integer keys (e.g., token probs)
+        return probs_stacked_bar(
+            df,
+            probs_column=answer_column,
+            category_column=category_column,
+            selected_categories=selected_categories,
+            title=title,
+            filename=filename,
+        )
     else:
-        # Auto-detect from data
-        sample_value = df[answer_column].dropna().iloc[0] if len(df) > 0 else None
-        if isinstance(sample_value, dict):
-            return probs_stacked_bar(
-                df,
-                probs_column=answer_column,
-                category_column=category_column,
-                selected_categories=selected_categories,
-                title=title,
-                filename=filename,
-            )
-        else:
-            return free_form_stacked_bar(
-                df,
-                category_column=category_column,
-                answer_column=answer_column,
-                selected_categories=selected_categories,
-                title=title,
-                filename=filename,
-            )
+        # Discrete values
+        return free_form_stacked_bar(
+            df,
+            category_column=category_column,
+            answer_column=answer_column,
+            selected_categories=selected_categories,
+            title=title,
+            filename=filename,
+        )
 
 
 def rating_cumulative_plot(
