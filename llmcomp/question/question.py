@@ -275,9 +275,12 @@ class Question(ABC):
         else:
             selected_categories = None
 
+        selected_paraphrase = None
+        if title is None and self.paraphrases is not None:
+            selected_paraphrase = self.paraphrases[0]
+
         return plots_plot(
             df,
-            question_type=self.type(),
             answer_column=answer_column,
             category_column=category_column,
             selected_categories=selected_categories,
@@ -287,7 +290,7 @@ class Question(ABC):
             min_fraction=min_fraction,
             colors=colors,
             title=title,
-            selected_paraphrase=self.paraphrases[0] if title is None else None,
+            selected_paraphrase=selected_paraphrase,
             filename=filename,
         )
 

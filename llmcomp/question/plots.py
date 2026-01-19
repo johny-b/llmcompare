@@ -4,7 +4,6 @@ import pandas as pd
 
 def plot(
     df: pd.DataFrame,
-    question_type: str,
     answer_column: str,
     category_column: str,
     selected_categories: list[str] = None,
@@ -20,7 +19,7 @@ def plot(
     if selected_categories is not None:
         df = df[df[category_column].isin(selected_categories)]
 
-    if title is None:
+    if title is None and "question" in df.columns:
         questions = sorted(df["question"].unique())
         if selected_paraphrase is None:
             selected_paraphrase = questions[0]
@@ -30,7 +29,38 @@ def plot(
         else:
             title = selected_paraphrase + f"\nand {num_paraphrases - 1} other paraphrases"
 
-    if question_type == "rating":
+    # Dispatch based on arguments and data
+    stacked_bar_args = selected_answers is not None or min_fraction is not None or colors is not None
+    rating_args = min_rating is not None and max_rating is not None
+
+    if stacked_bar_args:
+        # Stacked bar specific args provided
+        sample_value = df[answer_column].dropna().iloc[0] if len(df) > 0 else None
+        if isinstance(sample_value, dict):
+            return probs_stacked_bar(
+                df,
+                probs_column=answer_column,
+                category_column=category_column,
+                selected_categories=selected_categories,
+                selected_answers=selected_answers,
+                min_fraction=min_fraction,
+                colors=colors,
+                title=title,
+                filename=filename,
+            )
+        else:
+            return free_form_stacked_bar(
+                df,
+                category_column=category_column,
+                answer_column=answer_column,
+                selected_categories=selected_categories,
+                selected_answers=selected_answers,
+                min_fraction=min_fraction,
+                colors=colors,
+                title=title,
+                filename=filename,
+            )
+    elif rating_args:
         return rating_cumulative_plot(
             df,
             min_rating=min_rating,
@@ -41,30 +71,27 @@ def plot(
             title=title,
             filename=filename,
         )
-    elif question_type == "next_token":
-        return probs_stacked_bar(
-            df,
-            probs_column=answer_column,
-            category_column=category_column,
-            selected_categories=selected_categories,
-            selected_answers=selected_answers,
-            min_fraction=min_fraction,
-            colors=colors,
-            title=title,
-            filename=filename,
-        )
     else:
-        return free_form_stacked_bar(
-            df,
-            category_column=category_column,
-            answer_column=answer_column,
-            selected_categories=selected_categories,
-            selected_answers=selected_answers,
-            min_fraction=min_fraction,
-            colors=colors,
-            title=title,
-            filename=filename,
-        )
+        # Auto-detect from data
+        sample_value = df[answer_column].dropna().iloc[0] if len(df) > 0 else None
+        if isinstance(sample_value, dict):
+            return probs_stacked_bar(
+                df,
+                probs_column=answer_column,
+                category_column=category_column,
+                selected_categories=selected_categories,
+                title=title,
+                filename=filename,
+            )
+        else:
+            return free_form_stacked_bar(
+                df,
+                category_column=category_column,
+                answer_column=answer_column,
+                selected_categories=selected_categories,
+                title=title,
+                filename=filename,
+            )
 
 
 def rating_cumulative_plot(
