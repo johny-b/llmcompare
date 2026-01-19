@@ -1009,6 +1009,3 @@ class NextToken(Question):
             el["convert_to_probs"] = self.convert_to_probs
             el["num_samples"] = self.num_samples
         return runner_input
-
-    def df(self, model_groups: dict[str, list[str]]) -> pd.DataFrame:
-        return super().df(model_groups)
