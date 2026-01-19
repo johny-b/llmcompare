@@ -186,7 +186,15 @@ class Question(ABC):
         return cls.create(**question_dict)
 
     @classmethod
-    def view(cls, df: pd.DataFrame, *, open_browser: bool = True, port: int = 8501) -> None:
+    def view(
+        cls,
+        df: pd.DataFrame,
+        *,
+        sort_by: str | None = None,
+        sort_ascending: bool = True,
+        open_browser: bool = True,
+        port: int = 8501,
+    ) -> None:
         """Launch an interactive viewer to browse a results DataFrame.
 
         Spawns a local Streamlit server that displays the DataFrame in a
@@ -196,6 +204,9 @@ class Question(ABC):
             df: DataFrame with at least 'messages' and 'answer' columns.
                 Typically the output of question.df(model_groups).
                 Other columns (model, group, judges, etc.) are displayed as metadata.
+            sort_by: Column name to sort by. If None, keeps original order.
+                Useful for sorting by judge scores (e.g., sort_by="quality").
+            sort_ascending: Sort order. Default: True (ascending).
             open_browser: If True, automatically open the viewer in default browser.
                 Default: True.
             port: Port to run the Streamlit server on. Default: 8501.
@@ -204,8 +215,15 @@ class Question(ABC):
             >>> question = Question.create(type="free_form", paraphrases=["Hello!"])
             >>> df = question.df({"gpt4": ["gpt-4o"]})
             >>> Question.view(df)  # Opens browser with interactive viewer
+            >>> Question.view(df, sort_by="quality", sort_ascending=False)  # Sort by judge score
         """
-        render_dataframe(df, open_browser=open_browser, port=port)
+        render_dataframe(
+            df,
+            sort_by=sort_by,
+            sort_ascending=sort_ascending,
+            open_browser=open_browser,
+            port=port,
+        )
 
     @classmethod
     def _load_question_config(cls):
