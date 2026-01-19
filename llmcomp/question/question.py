@@ -105,6 +105,29 @@ class _PlotMethod:
         title: str = None,
         filename: str = None,
     ):
+        """Plot results as a chart.
+
+        Can be called as:
+            - Question.plot(df) - plot a DataFrame directly
+            - question.plot(model_groups) - run df() on models, then plot
+            - question.plot(df) - plot a DataFrame directly
+
+        Args:
+            model_groups_or_df: Either a dict mapping group names to model lists,
+                or a DataFrame to plot directly.
+            category_column: Column to group by on x-axis. Default: "group".
+            answer_column: Column containing answers to plot. Default: "answer"
+                (or "probs" for Rating questions).
+            selected_categories: List of categories to include (in order). Others excluded.
+            selected_answers: List of answers to show in stacked bar. Others grouped as "[OTHER]".
+            min_fraction: Minimum fraction threshold for stacked bar. Answers below grouped as "[OTHER]".
+            colors: Dict mapping answer values to colors for stacked bar.
+            title: Plot title. Auto-generated from question if not provided.
+            filename: If provided, saves the plot to this file path.
+
+        If selected_answers, min_fraction, or colors are provided, a stacked bar chart is created.
+        Otherwise, llmcomp will try to create the best plot for the data.
+        """
         if isinstance(df, dict):
             raise TypeError(
                 "Question.plot() expects a DataFrame, not a dict.\n"
