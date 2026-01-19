@@ -269,18 +269,18 @@ class Question(ABC):
                 answer_column = "answer"
 
         if category_column == "group":
-            category_order = list(model_groups.keys())
+            selected_categories = list(model_groups.keys())
         elif category_column == "model":
-            category_order = [model for group in model_groups.values() for model in group]
+            selected_categories = [model for group in model_groups.values() for model in group]
         else:
-            category_order = None
+            selected_categories = None
 
         return plots_plot(
             df,
             question_type=self.type(),
             answer_column=answer_column,
             category_column=category_column,
-            category_order=category_order,
+            selected_categories=selected_categories,
             min_rating=getattr(self, "min_rating", None),
             max_rating=getattr(self, "max_rating", None),
             selected_answers=selected_answers,

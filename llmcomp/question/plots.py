@@ -6,8 +6,8 @@ def plot(
     df: pd.DataFrame,
     question_type: str,
     answer_column: str,
-    category_column: str = "group",
-    category_order: list[str] = None,
+    category_column: str,
+    selected_categories: list[str] = None,
     min_rating: int = None,
     max_rating: int = None,
     selected_answers: list[str] = None,
@@ -17,6 +17,9 @@ def plot(
     selected_paraphrase: str = None,
     filename: str = None,
 ):
+    if selected_categories is not None:
+        df = df[df[category_column].isin(selected_categories)]
+
     if title is None:
         questions = sorted(df["question"].unique())
         if selected_paraphrase is None:
@@ -34,7 +37,7 @@ def plot(
             max_rating=max_rating,
             probs_column=answer_column,
             category_column=category_column,
-            category_order=category_order,
+            selected_categories=selected_categories,
             title=title,
             filename=filename,
         )
@@ -43,7 +46,7 @@ def plot(
             df,
             probs_column=answer_column,
             category_column=category_column,
-            category_order=category_order,
+            selected_categories=selected_categories,
             selected_answers=selected_answers,
             min_fraction=min_fraction,
             colors=colors,
@@ -55,7 +58,7 @@ def plot(
             df,
             category_column=category_column,
             answer_column=answer_column,
-            category_order=category_order,
+            selected_categories=selected_categories,
             selected_answers=selected_answers,
             min_fraction=min_fraction,
             colors=colors,
@@ -70,13 +73,13 @@ def rating_cumulative_plot(
     max_rating: int,
     probs_column: str = "probs",
     category_column: str = "group",
-    category_order: list[str] = None,
+    selected_categories: list[str] = None,
     title: str = None,
     filename: str = None,
 ):
     categories = list(df[category_column].unique())
-    if category_order is not None:
-        categories = [c for c in category_order if c in categories]
+    if selected_categories is not None:
+        categories = [c for c in selected_categories if c in categories]
 
     fig, ax = plt.subplots(figsize=(10, 6))
     x_values = list(range(min_rating, max_rating + 1))
@@ -123,7 +126,7 @@ def probs_stacked_bar(
     df: pd.DataFrame,
     probs_column: str = "probs",
     category_column: str = "group",
-    category_order: list[str] = None,
+    selected_categories: list[str] = None,
     selected_answers: list[str] = None,
     min_fraction: float = None,
     colors: dict[str, str] = None,
@@ -233,8 +236,8 @@ def probs_stacked_bar(
             color_index += 1
 
     # Order categories
-    if category_order is not None:
-        ordered_categories = [c for c in category_order if c in answer_percentages.index]
+    if selected_categories is not None:
+        ordered_categories = [c for c in selected_categories if c in answer_percentages.index]
         ordered_categories += [c for c in answer_percentages.index if c not in ordered_categories]
         answer_percentages = answer_percentages.reindex(ordered_categories)
 
@@ -259,7 +262,7 @@ def free_form_stacked_bar(
     df: pd.DataFrame,
     category_column: str = "group",
     answer_column: str = "answer",
-    category_order: list[str] = None,
+    selected_categories: list[str] = None,
     selected_answers: list[str] = None,
     min_fraction: float = None,
     colors: dict[str, str] = None,
@@ -279,7 +282,7 @@ def free_form_stacked_bar(
         probs_df,
         probs_column="probs",
         category_column=category_column,
-        category_order=category_order,
+        selected_categories=selected_categories,
         selected_answers=selected_answers,
         min_fraction=min_fraction,
         colors=colors,
