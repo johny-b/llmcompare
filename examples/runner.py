@@ -32,9 +32,18 @@ kwargs_list = [
 ]
 
 # Run get_text in parallel
-for in_, (out, prepared_kwargs) in runner.get_many(runner.get_text, kwargs_list):
-    print(in_, "->", out)
+# get_many yields (input, (result, prepared_kwargs)) for each request
+print("\n=== get_many with get_text ===")
+for in_, (result, prepared_kwargs) in runner.get_many(runner.get_text, kwargs_list):
+    print(f"Input:           {in_}")
+    print(f"Prepared kwargs: {prepared_kwargs}")
+    print(f"Result:          {result}")
+    print()
 
 # Run single_token_probs in parallel
-for in_, (out, prepared_kwargs) in runner.get_many(runner.single_token_probs, kwargs_list):
-    print(in_, "->", out)
+print("\n=== get_many with single_token_probs ===")
+for in_, (result, prepared_kwargs) in runner.get_many(runner.single_token_probs, kwargs_list):
+    print(f"Input:           {in_}")
+    print(f"Prepared kwargs: {prepared_kwargs}")
+    print(f"Result:          {result}")
+    print()

@@ -442,8 +442,13 @@ def _streamlit_main():
     
     # Metadata at the bottom
     st.divider()
-    exclude_keys = {"api_kwargs", "answer", "question", "paraphrase_ix"} | set(judge_columns)
-    _display_metadata(current, exclude_keys)
+    # Show api_kwargs in metadata, but without messages (already displayed above)
+    current_for_metadata = current.copy()
+    if "api_kwargs" in current_for_metadata and isinstance(current_for_metadata["api_kwargs"], dict):
+        api_kwargs_without_messages = {k: v for k, v in current_for_metadata["api_kwargs"].items() if k != "messages"}
+        current_for_metadata["api_kwargs"] = api_kwargs_without_messages
+    exclude_keys = {"answer", "question", "paraphrase_ix"} | set(judge_columns)
+    _display_metadata(current_for_metadata, exclude_keys)
     
     # Keyboard navigation hint
     st.caption("💡 Tip: Use the navigation buttons or enter a number to jump to a specific row.")
