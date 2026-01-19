@@ -5,7 +5,15 @@ import os
 from dataclasses import dataclass, field
 
 # Valid roles for OpenAI finetuning
-VALID_ROLES = {"system", "user", "assistant"}
+VALID_ROLES = {"system", "user", "assistant", "tool"}
+
+# Allowed keys per role
+ALLOWED_KEYS_BY_ROLE = {
+    "system": {"role", "content", "name"},
+    "user": {"role", "content", "name"},
+    "assistant": {"role", "content", "name", "weight", "tool_calls"},
+    "tool": {"role", "content", "tool_call_id"},
+}
 
 # Minimum number of examples required by OpenAI
 MIN_EXAMPLES = 10
@@ -52,12 +60,17 @@ def validate_finetuning_file(file_name: str) -> ValidationResult:
     - File is valid JSONL (one JSON object per line)
     - At least 10 examples (OpenAI requirement)
     - Each example has a 'messages' array
-    - Messages have valid 'role' (system, user, assistant)
-    - Messages have valid 'content' (string or array)
+    - Messages have valid 'role' (system, user, assistant, tool)
+    - Messages only contain allowed keys for their role:
+        - system/user: role, content, name
+        - assistant: role, content, name, weight, tool_calls
+        - tool: role, content, tool_call_id
+    - Messages have valid 'content' (string or array for multimodal)
     - Each example has at least one 'assistant' message
     - Last message must be from 'assistant'
-    - Optional 'weight' field: only on assistant messages, must be 0 or 1,
-      and the last assistant message cannot have weight=0
+    - 'weight' field (assistant only): must be 0 or 1, last assistant cannot be 0
+    - 'tool_calls' field (assistant only): validates structure (id, type, function)
+    - 'tool' messages require 'tool_call_id'
 
     Args:
         file_name: Path to the JSONL file to validate.
@@ -160,14 +173,15 @@ def _validate_line(line: str, line_num: int) -> list[ValidationError]:
             )
         )
 
-    # Check last message is from assistant
+    # Check last message is from assistant (not user, system, or tool)
     if len(messages) > 0:
         last_msg = messages[-1]
-        if isinstance(last_msg, dict) and last_msg.get("role") != "assistant":
+        last_role = last_msg.get("role") if isinstance(last_msg, dict) else None
+        if last_role != "assistant":
             errors.append(
                 ValidationError(
                     line_num,
-                    f"Last message must be from 'assistant', got '{last_msg.get('role')}'.",
+                    f"Last message must be from 'assistant', got '{last_role}'.",
                 )
             )
 
@@ -208,33 +222,113 @@ def _validate_message(msg: dict, line_num: int, msg_idx: int) -> list[Validation
                 )
             )
 
+    # Check for unknown keys (only if role is valid)
+    if role in ALLOWED_KEYS_BY_ROLE:
+        allowed_keys = ALLOWED_KEYS_BY_ROLE[role]
+        unknown_keys = set(msg.keys()) - allowed_keys
+        if unknown_keys:
+            errors.append(
+                ValidationError(
+                    line_num,
+                    f"{prefix}: unknown key(s) for role '{role}': {', '.join(sorted(unknown_keys))}. "
+                    f"Allowed: {', '.join(sorted(allowed_keys))}",
+                )
+            )
+
     # Check 'content'
     if "content" not in msg:
-        # Content can be omitted if there's a tool_calls field
-        if "tool_calls" not in msg:
+        # Content can be omitted if there's a tool_calls field (assistant only)
+        if role != "assistant" or "tool_calls" not in msg:
             errors.append(ValidationError(line_num, f"{prefix}: missing 'content'"))
     else:
         content = msg["content"]
         content_errors = _validate_content(content, line_num, prefix, role)
         errors.extend(content_errors)
 
+    # Role-specific validation
+    if role == "assistant":
+        errors.extend(_validate_assistant_message(msg, line_num, prefix))
+    elif role == "tool":
+        errors.extend(_validate_tool_message(msg, line_num, prefix))
+
+    return errors
+
+
+def _validate_assistant_message(msg: dict, line_num: int, prefix: str) -> list[ValidationError]:
+    """Validate assistant-specific fields."""
+    errors: list[ValidationError] = []
+
     # Check 'weight' field
     if "weight" in msg:
         weight = msg["weight"]
-        if role != "assistant":
-            errors.append(
-                ValidationError(
-                    line_num,
-                    f"{prefix}: 'weight' can only be set on assistant messages",
-                )
-            )
-        elif weight not in (0, 1):
+        if weight not in (0, 1):
             errors.append(
                 ValidationError(
                     line_num,
                     f"{prefix}: 'weight' must be 0 or 1, got {weight!r}",
                 )
             )
+
+    # Check 'tool_calls' field
+    if "tool_calls" in msg:
+        tool_calls = msg["tool_calls"]
+        if not isinstance(tool_calls, list):
+            errors.append(ValidationError(line_num, f"{prefix}: 'tool_calls' must be an array"))
+        elif len(tool_calls) == 0:
+            errors.append(ValidationError(line_num, f"{prefix}: 'tool_calls' array is empty"))
+        else:
+            for i, tc in enumerate(tool_calls):
+                errors.extend(_validate_tool_call(tc, line_num, f"{prefix}.tool_calls[{i}]"))
+
+    return errors
+
+
+def _validate_tool_call(tc: dict, line_num: int, prefix: str) -> list[ValidationError]:
+    """Validate a single tool_call object."""
+    errors: list[ValidationError] = []
+
+    if not isinstance(tc, dict):
+        errors.append(ValidationError(line_num, f"{prefix}: must be an object"))
+        return errors
+
+    # Required fields: id, type, function
+    if "id" not in tc:
+        errors.append(ValidationError(line_num, f"{prefix}: missing 'id'"))
+    elif not isinstance(tc["id"], str):
+        errors.append(ValidationError(line_num, f"{prefix}: 'id' must be a string"))
+
+    if "type" not in tc:
+        errors.append(ValidationError(line_num, f"{prefix}: missing 'type'"))
+    elif tc["type"] != "function":
+        errors.append(ValidationError(line_num, f"{prefix}: 'type' must be 'function'"))
+
+    if "function" not in tc:
+        errors.append(ValidationError(line_num, f"{prefix}: missing 'function'"))
+    elif not isinstance(tc["function"], dict):
+        errors.append(ValidationError(line_num, f"{prefix}: 'function' must be an object"))
+    else:
+        func = tc["function"]
+        if "name" not in func:
+            errors.append(ValidationError(line_num, f"{prefix}.function: missing 'name'"))
+        elif not isinstance(func["name"], str):
+            errors.append(ValidationError(line_num, f"{prefix}.function: 'name' must be a string"))
+
+        if "arguments" not in func:
+            errors.append(ValidationError(line_num, f"{prefix}.function: missing 'arguments'"))
+        elif not isinstance(func["arguments"], str):
+            errors.append(ValidationError(line_num, f"{prefix}.function: 'arguments' must be a string"))
+
+    return errors
+
+
+def _validate_tool_message(msg: dict, line_num: int, prefix: str) -> list[ValidationError]:
+    """Validate tool message fields."""
+    errors: list[ValidationError] = []
+
+    if "tool_call_id" not in msg:
+        errors.append(ValidationError(line_num, f"{prefix}: missing 'tool_call_id'"))
+    elif not isinstance(msg["tool_call_id"], str):
+        errors.append(ValidationError(line_num, f"{prefix}: 'tool_call_id' must be a string"))
 
     return errors
 
