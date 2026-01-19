@@ -398,7 +398,6 @@ class Question(ABC):
                             "group": group,
                             "answer": el["answer"],
                             "question": el["question"],
-                            "messages": el["messages"],
                             "api_kwargs": el["api_kwargs"],
                             "paraphrase_ix": el["paraphrase_ix"],
                         }
@@ -519,23 +518,9 @@ class Question(ABC):
                             else:
                                 in_, (out, prepared_kwargs) = payload
                                 data = results[models.index(model)]
-                                # Use messages from prepared_kwargs (what was actually sent to API)
-                                # Fall back to original params if prepared_kwargs is empty (error case)
-                                if prepared_kwargs:
-                                    messages = prepared_kwargs.get("messages", in_["params"]["messages"])
-                                    # api_kwargs contains everything except messages and timeout
-                                    api_kwargs = {
-                                        k: v for k, v in prepared_kwargs.items()
-                                        if k not in ("messages", "timeout")
-                                    }
-                                else:
-                                    messages = in_["params"]["messages"]
-                                    api_kwargs = {}
+                                
                                 data[in_["_original_ix"]] = {
-                                    # Deepcopy because messages may be reused for multiple models
-                                    # and we don't want weird side effects if someone later edits them
-                                    "messages": deepcopy(messages),
-                                    "api_kwargs": api_kwargs,
+                                    "api_kwargs": deepcopy(prepared_kwargs),
                                     "question": in_["_question"],
                                     "answer": out,
                                     "paraphrase_ix": in_["_paraphrase_ix"],
@@ -606,7 +591,7 @@ class FreeForm(Question):
         "group",
         "answer",
         "question",
-        "messages",
+        "api_kwargs",
         "paraphrase_ix",
         "raw_answer",
         "probs",

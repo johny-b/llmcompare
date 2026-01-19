@@ -26,7 +26,7 @@ def test_question_create_to_df(mock_openai_chat_completion, temp_dir):
     assert len(df) > 0
     
     # Check expected columns
-    expected_columns = ["model", "group", "answer", "question", "messages"]
+    expected_columns = ["model", "group", "answer", "question", "api_kwargs"]
     for col in expected_columns:
         assert col in df.columns, f"Column {col} not found in dataframe"
     
@@ -41,8 +41,8 @@ def test_question_create_to_df(mock_openai_chat_completion, temp_dir):
     # Check that answers are strings (from our mock)
     assert all(isinstance(answer, str) for answer in df["answer"])
     
-    # Check that messages are lists
-    assert all(isinstance(msgs, list) for msgs in df["messages"])
+    # Check that api_kwargs contains messages as lists
+    assert all(isinstance(kwargs["messages"], list) for kwargs in df["api_kwargs"])
     
     # Check that group is set correctly
     assert all(df["group"] == "test_model_group")
@@ -184,8 +184,9 @@ def test_freeform_with_system_message(mock_openai_chat_completion, temp_dir):
     model_groups = {"group1": ["model-1"]}
     df = question.df(model_groups)
     assert len(df) > 0
-    assert all(len(msgs) == 2 for msgs in df["messages"])
-    assert all(msgs[0]["role"] == "system" for msgs in df["messages"])
+    messages_list = [kwargs["messages"] for kwargs in df["api_kwargs"]]
+    assert all(len(msgs) == 2 for msgs in messages_list)
+    assert all(msgs[0]["role"] == "system" for msgs in messages_list)
 
 
 def test_freeform_with_custom_messages(mock_openai_chat_completion, temp_dir):
@@ -200,8 +201,8 @@ def test_freeform_with_custom_messages(mock_openai_chat_completion, temp_dir):
     model_groups = {"group1": ["model-1"]}
     df = question.df(model_groups)
     assert len(df) == 2
-    assert df["messages"].iloc[0] == messages[0]
-    assert df["messages"].iloc[1] == messages[1]
+    assert df["api_kwargs"].iloc[0]["messages"] == messages[0]
+    assert df["api_kwargs"].iloc[1]["messages"] == messages[1]
 
 
 def test_freeform_multiple_samples_per_paraphrase(mock_openai_chat_completion, temp_dir):
@@ -410,7 +411,7 @@ def test_paraphrase_ix_with_messages(mock_openai_chat_completion, temp_dir):
 
 def test_forbidden_judge_names(mock_openai_chat_completion, temp_dir):
     """Test that forbidden judge names raise ValueError"""
-    forbidden_names = ["model", "group", "answer", "question", "messages", "paraphrase_ix", "raw_answer"]
+    forbidden_names = ["model", "group", "answer", "question", "api_kwargs", "paraphrase_ix", "raw_answer"]
     
     for forbidden_name in forbidden_names:
         with pytest.raises(ValueError, match=f"Judge name '{forbidden_name}' is forbidden"):
