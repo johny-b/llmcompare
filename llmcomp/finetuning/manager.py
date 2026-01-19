@@ -4,6 +4,7 @@ import os
 import openai
 import pandas as pd
 
+from llmcomp.finetuning.validation import ValidationResult, validate_finetuning_file
 from llmcomp.utils import read_jsonl, write_jsonl
 
 DEFAULT_DATA_DIR = "llmcomp_models"
@@ -207,6 +208,19 @@ class FinetuningManager:
             )
 
         """
+        validation_result = self.validate_file(file_name)
+        if not validation_result.valid:
+            print("Invalid training file.")
+            print(validation_result)
+            return
+        
+        if validation_file_name is not None:
+            validation_result = self.validate_file(validation_file_name)
+            if not validation_result.valid:
+                print("Invalid validation file.")
+                print(validation_result)
+                return
+
         if suffix is None:
             suffix = self._get_default_suffix(file_name, lr_multiplier, epochs, batch_size)
 
@@ -277,6 +291,13 @@ class FinetuningManager:
         print(f"  Epochs:     {epochs}, Batch: {batch_size}, LR: {lr_multiplier}")
         print(f"  Status:     {response.status}")
         print(f"\nRun `llmcomp-update-jobs` to check progress.")
+
+    def validate_file(self, file_name: str) -> ValidationResult:
+        """Validate a JSONL file for OpenAI finetuning.
+
+        See `llmcomp.finetuning.validate_finetuning_file` for details.
+        """
+        return validate_finetuning_file(file_name)
 
     #########################################################
     # PRIVATE METHODS
