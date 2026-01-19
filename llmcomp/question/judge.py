@@ -31,6 +31,17 @@ class JudgeMixin:
         """Validate judge-specific constraints."""
         assert len(self.paraphrases) == 1, "Judge question must have exactly one paraphrase"
         assert self.samples_per_paraphrase == 1, "Judge question must have exactly one sample per paraphrase"
+        
+        # Check that the template contains {answer} placeholder
+        formatter = string.Formatter()
+        field_names = [
+            field_name for _, field_name, _, _ in formatter.parse(self.paraphrases[0]) if field_name is not None
+        ]
+        if "answer" not in field_names:
+            raise ValueError(
+                f"Judge template must contain {{answer}} placeholder. "
+                f"Got: {self.paraphrases[0]!r}"
+            )
 
     def _load_cache_data(self) -> list[dict]:
         """Load cache and return list of row dicts with question, answer, judge_question, judge_answer.
