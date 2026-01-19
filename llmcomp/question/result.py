@@ -12,7 +12,7 @@ if TYPE_CHECKING:
     from llmcomp.question.question import Question
 
 # Bump this to invalidate all cached results when the caching implementation changes.
-CACHE_VERSION = 3
+CACHE_VERSION = 2
 
 
 def cache_hash(question: "Question", model: str) -> str:
