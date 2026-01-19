@@ -1,6 +1,6 @@
 """DataFrame viewer for browsing question results.
 
-Spawns a local Streamlit server to interactively browse (messages, answer) pairs.
+Spawns a local Streamlit server to interactively browse (api_kwargs, answer) pairs.
 
 Usage:
     from llmcomp import Question
@@ -32,7 +32,7 @@ def render_dataframe(
     """Launch a Streamlit viewer for the DataFrame.
     
     Args:
-        df: DataFrame with at least 'messages' and 'answer' columns.
+        df: DataFrame with at least 'api_kwargs' and 'answer' columns.
             Other columns (model, group, etc.) are displayed as metadata.
         sort_by: Column name to sort by initially. If None, keeps original order.
         sort_ascending: Sort order. Default: True (ascending).
@@ -43,8 +43,8 @@ def render_dataframe(
         ValueError: If required columns are missing.
     """
     # Validate required columns
-    if "messages" not in df.columns:
-        raise ValueError("DataFrame must have a 'messages' column")
+    if "api_kwargs" not in df.columns:
+        raise ValueError("DataFrame must have an 'api_kwargs' column")
     if "answer" not in df.columns:
         raise ValueError("DataFrame must have an 'answer' column")
     if sort_by is not None and sort_by not in df.columns:
@@ -217,7 +217,8 @@ def _search_items(items: list[dict[str, Any]], query: str) -> list[dict[str, Any
     
     for item in items:
         # Build searchable text from item
-        messages = item.get("messages", [])
+        api_kwargs = item.get("api_kwargs", {})
+        messages = api_kwargs.get("messages", []) if isinstance(api_kwargs, dict) else []
         messages_text = " ".join(m.get("content", "") for m in messages)
         
         answer = item.get("answer", "")
@@ -274,7 +275,7 @@ def _streamlit_main():
     sortable_columns = ["(none)"]
     if items:
         for key, value in items[0].items():
-            if key not in ("messages",) and isinstance(value, (int, float, str, type(None))):
+            if key not in ("api_kwargs",) and isinstance(value, (int, float, str, type(None))):
                 sortable_columns.append(key)
     
     # Initialize sort settings from command line args
@@ -409,7 +410,8 @@ def _streamlit_main():
     
     with left_col:
         st.subheader("💬 Messages")
-        messages = current.get("messages", [])
+        api_kwargs = current.get("api_kwargs", {})
+        messages = api_kwargs.get("messages", []) if isinstance(api_kwargs, dict) else []
         if messages:
             _display_messages(messages)
         else:
@@ -426,7 +428,7 @@ def _streamlit_main():
         
         # Display judge columns if present
         judge_columns = [k for k in current.keys() if not k.startswith("_") and k not in {
-            "messages", "answer", "question", "model", "group", "paraphrase_ix", "raw_answer"
+            "api_kwargs", "answer", "question", "model", "group", "paraphrase_ix", "raw_answer"
         } and not k.endswith("_question") and not k.endswith("_raw_answer")]
         
         if judge_columns:
@@ -440,8 +442,13 @@ def _streamlit_main():
     
     # Metadata at the bottom
     st.divider()
-    exclude_keys = {"messages", "answer", "question", "paraphrase_ix"} | set(judge_columns)
-    _display_metadata(current, exclude_keys)
+    # Show api_kwargs in metadata, but without messages (already displayed above)
+    current_for_metadata = current.copy()
+    if "api_kwargs" in current_for_metadata and isinstance(current_for_metadata["api_kwargs"], dict):
+        api_kwargs_without_messages = {k: v for k, v in current_for_metadata["api_kwargs"].items() if k != "messages"}
+        current_for_metadata["api_kwargs"] = api_kwargs_without_messages
+    exclude_keys = {"answer", "question", "paraphrase_ix"} | set(judge_columns)
+    _display_metadata(current_for_metadata, exclude_keys)
     
     # Keyboard navigation hint
     st.caption("💡 Tip: Use the navigation buttons or enter a number to jump to a specific row.")

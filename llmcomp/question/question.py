@@ -398,7 +398,7 @@ class Question(ABC):
                             "group": group,
                             "answer": el["answer"],
                             "question": el["question"],
-                            "messages": el["messages"],
+                            "api_kwargs": el["api_kwargs"],
                             "paraphrase_ix": el["paraphrase_ix"],
                         }
                     )
@@ -516,12 +516,11 @@ class Question(ABC):
                                 error = payload[0]
                                 errors.append((model, error))
                             else:
-                                in_, out = payload
+                                in_, (out, prepared_kwargs) = payload
                                 data = results[models.index(model)]
+                                
                                 data[in_["_original_ix"]] = {
-                                    # Deepcopy because in_["params"]["messages"] is reused for multiple models
-                                    # and we don't want weird side effects if someone later edits the messages
-                                    "messages": deepcopy(in_["params"]["messages"]),
+                                    "api_kwargs": deepcopy(prepared_kwargs),
                                     "question": in_["_question"],
                                     "answer": out,
                                     "paraphrase_ix": in_["_paraphrase_ix"],
@@ -592,7 +591,7 @@ class FreeForm(Question):
         "group",
         "answer",
         "question",
-        "messages",
+        "api_kwargs",
         "paraphrase_ix",
         "raw_answer",
         "probs",
@@ -651,7 +650,7 @@ class FreeForm(Question):
                 - group: Group name from model_groups
                 - answer: Model's response text
                 - question: The prompt that was sent
-                - messages: Full message list sent to model
+                - api_kwargs: Full API parameters sent to model (including messages, temperature, etc.)
                 - paraphrase_ix: Index of the paraphrase used
                 - {judge_name}: Score/response from each configured judge
                 - {judge_name}_question: The prompt sent to the judge
@@ -922,7 +921,7 @@ class Rating(Question):
                 - raw_answer: Original logprobs dict {token: probability}
                 - probs: Normalized probabilities dict {int_rating: probability}
                 - question: The prompt that was sent
-                - messages: Full message list sent to model
+                - api_kwargs: Full API parameters sent to model (including messages, temperature, etc.)
                 - paraphrase_ix: Index of the paraphrase used
         """
         df = super().df(model_groups)

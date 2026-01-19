@@ -129,7 +129,7 @@ You can send more parallel requests by increasing `Config.max_workers`.
 Suppose you have many prompts you want to send to models. There are three options:
 1. Have a separate Question object for each prompt and execute them in a loop
 2. Have a separate Question object for each prompt and execute them in parallel
-3. Have a single Question object with many paraphrases and then split the resulting dataframe (using any of the `paraphrase_ix`, `question` or `messages` columns)
+3. Have a single Question object with many paraphrases and then split the resulting dataframe (using any of the `paraphrase_ix` or `question` columns)
 
 Option 1 will be slow - the more quick questions you have, the worse.
 Option 2 will be fast, but you need to write parallelization yourself. Question should be thread-safe, but parallel execution of questions was **never** tested. One thing that won't work: `llmcomp.Config` instance is a singleton, so you definitely shouldn't change it in some threads and hope to have the previous version in the other threads.

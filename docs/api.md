@@ -56,7 +56,7 @@ DataFrame with columns:
 - group: Group name from model_groups
 - answer: Model's response text
 - question: The prompt that was sent
-- messages: Full message list sent to model
+- api_kwargs: Full API parameters sent to model (including messages, temperature, etc.)
 - paraphrase_ix: Index of the paraphrase used
 - {judge_name}: Score/response from each configured judge
 - {judge_name}_question: The prompt sent to the judge
@@ -153,7 +153,7 @@ DataFrame with columns:
 - raw_answer: Original logprobs dict {token: probability}
 - probs: Normalized probabilities dict {int_rating: probability}
 - question: The prompt that was sent
-- messages: Full message list sent to model
+- api_kwargs: Full API parameters sent to model (including messages, temperature, etc.)
 - paraphrase_ix: Index of the paraphrase used
 
 
