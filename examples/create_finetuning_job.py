@@ -62,5 +62,7 @@ manager.create_job(
     epochs=EPOCHS,
     seed=SEED,
     suffix=SUFFIX,
+    wandb_project="conditional_misalignment",
+    wandb_entity="truthfulai",
 )
 # %%

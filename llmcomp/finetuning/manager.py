@@ -186,6 +186,10 @@ class FinetuningManager:
         lr_multiplier: float | str = "auto",
         seed: int | None = None,
         validation_file_name: str | None = None,
+        wandb_project: str | None = None,
+        wandb_entity: str | None = None,
+        wandb_name: str | None = None,
+        wandb_tags: list[str] | None = None,
     ):
         """Create a new finetuning job.
 
@@ -204,6 +208,12 @@ class FinetuningManager:
                 lr_multiplier="auto",
                 seed=None,
                 validation_file_name="my_validation.jsonl",  # Optional validation dataset
+
+                # Optional W&B integration (requires W&B API key linked in OpenAI dashboard)
+                wandb_project="my-wandb-project",  # Required to enable W&B
+                wandb_entity="my-team",            # Optional, defaults to your W&B default entity
+                wandb_name="experiment-1",         # Optional, defaults to job ID
+                wandb_tags=["experiment", "v1"],   # Optional
             )
 
         """
@@ -242,6 +252,17 @@ class FinetuningManager:
         if validation_file_id is not None:
             data["validation_file"] = validation_file_id
 
+        # Add W&B integration if wandb_project is provided
+        if wandb_project is not None:
+            wandb_config = {"project": wandb_project}
+            if wandb_entity is not None:
+                wandb_config["entity"] = wandb_entity
+            if wandb_name is not None:
+                wandb_config["name"] = wandb_name
+            if wandb_tags is not None:
+                wandb_config["tags"] = wandb_tags
+            data["integrations"] = [{"type": "wandb", "wandb": wandb_config}]
+
         client = openai.OpenAI(api_key=api_key)
         response = client.fine_tuning.jobs.create(**data)
         job_id = response.id
@@ -251,20 +272,23 @@ class FinetuningManager:
         except FileNotFoundError:
             ft_jobs = []
 
-        ft_jobs.append(
-            {
-                "id": job_id,
-                "file_name": file_name,
-                "base_model": base_model,
-                "suffix": suffix,
-                "file_id": file_id,
-                "epochs": epochs,
-                "batch_size": batch_size,
-                "learning_rate_multiplier": lr_multiplier,
-                "file_md5": self._get_file_md5(file_name),
-                "organization_id": organization_id,
-            }
-        )
+        job_record = {
+            "id": job_id,
+            "file_name": file_name,
+            "base_model": base_model,
+            "suffix": suffix,
+            "file_id": file_id,
+            "epochs": epochs,
+            "batch_size": batch_size,
+            "learning_rate_multiplier": lr_multiplier,
+            "file_md5": self._get_file_md5(file_name),
+            "organization_id": organization_id,
+        }
+        if wandb_project is not None:
+            job_record["wandb_project"] = wandb_project
+            if wandb_entity is not None:
+                job_record["wandb_entity"] = wandb_entity
+        ft_jobs.append(job_record)
         write_jsonl(fname, ft_jobs)
 
         print(f"\n✓ Finetuning job created")
@@ -275,6 +299,9 @@ class FinetuningManager:
         if validation_file_id is not None:
             print(f"  Validation: {validation_file_name} (id: {validation_file_id})")
         print(f"  Epochs:     {epochs}, Batch: {batch_size}, LR: {lr_multiplier}")
+        if wandb_project is not None:
+            wandb_location = f"{wandb_entity}/{wandb_project}" if wandb_entity else wandb_project
+            print(f"  W&B:        {wandb_location}")
         print(f"  Status:     {response.status}")
         print(f"\nRun `llmcomp-update-jobs` to check progress.")
 
