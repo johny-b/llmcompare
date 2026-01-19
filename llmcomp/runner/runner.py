@@ -51,12 +51,15 @@ class Runner:
         prepared = ModelAdapter.prepare(params, self.model)
         return {"timeout": Config.timeout, **prepared}
 
-    def get_text(self, params: dict) -> str:
+    def get_text(self, params: dict) -> tuple[str, dict]:
         """Get a text completion from the model.
 
         Args:
             params: Dictionary of parameters for the API.
                 Must include 'messages'. Other common keys: 'temperature', 'max_tokens'.
+
+        Returns:
+            Tuple of (content, prepared_kwargs) where prepared_kwargs is what was sent to the API.
         """
         prepared = self._prepare_for_model(params)
         completion = openai_chat_completion(client=self.client, **prepared)
@@ -72,8 +75,8 @@ class Runner:
                 #             refusal="I'm sorry, I'm unable to fulfill that request.",
                 #             ...))])
                 warnings.warn(f"API sent None as content. Returning empty string.\n{completion}", stacklevel=2)
-                return ""
-            return content
+                return "", prepared
+            return content, prepared
         except Exception:
             warnings.warn(f"Unexpected error.\n{completion}")
             raise
@@ -84,7 +87,7 @@ class Runner:
         *,
         num_samples: int = 1,
         convert_to_probs: bool = True,
-    ) -> dict:
+    ) -> tuple[dict, dict]:
         """Get probability distribution of the next token, optionally averaged over multiple samples.
 
         Args:
@@ -92,28 +95,35 @@ class Runner:
                 Must include 'messages'. Other common keys: 'top_logprobs', 'logit_bias'.
             num_samples: Number of samples to average over. Default: 1.
             convert_to_probs: If True, convert logprobs to probabilities. Default: True.
+
+        Returns:
+            Tuple of (probs_dict, prepared_kwargs) where prepared_kwargs is what was sent to the API.
         """
         probs = {}
+        prepared = None
         for _ in range(num_samples):
-            new_probs = self.single_token_probs_one_sample(params, convert_to_probs=convert_to_probs)
+            new_probs, prepared = self.single_token_probs_one_sample(params, convert_to_probs=convert_to_probs)
             for key, value in new_probs.items():
                 probs[key] = probs.get(key, 0) + value
         result = {key: value / num_samples for key, value in probs.items()}
         result = dict(sorted(result.items(), key=lambda x: x[1], reverse=True))
-        return result
+        return result, prepared
 
     def single_token_probs_one_sample(
         self,
         params: dict,
         *,
         convert_to_probs: bool = True,
-    ) -> dict:
+    ) -> tuple[dict, dict]:
         """Get probability distribution of the next token (single sample).
 
         Args:
             params: Dictionary of parameters for the API.
                 Must include 'messages'. Other common keys: 'top_logprobs', 'logit_bias'.
             convert_to_probs: If True, convert logprobs to probabilities. Default: True.
+
+        Returns:
+            Tuple of (probs_dict, prepared_kwargs) where prepared_kwargs is what was sent to the API.
 
         Note: This function forces max_tokens=1, temperature=0, logprobs=True.
         """
@@ -138,7 +148,7 @@ class Runner:
         except IndexError:
             # This should not happen according to the API docs. But it sometimes does.
             print(NO_LOGPROBS_WARNING.format(model=self.model, completion=completion))
-            return {}
+            return {}, prepared
 
         # Check for duplicate tokens - this shouldn't happen with OpenAI but might with other providers
         tokens = [el.token for el in logprobs]
@@ -153,7 +163,7 @@ class Runner:
         for el in logprobs:
             result[el.token] = math.exp(el.logprob) if convert_to_probs else el.logprob
 
-        return result
+        return result, prepared
 
     def get_many(
         self,
@@ -173,8 +183,8 @@ class Runner:
                 {"params": {"messages": [{"role": "user", "content": "Hello"}]}},
                 {"params": {"messages": [{"role": "user", "content": "Bye"}], "temperature": 0.7}},
             ]
-            for in_, out in runner.get_many(runner.get_text, kwargs_list):
-                print(in_, "->", out)
+            for in_, (out, prepared_kwargs) in runner.get_many(runner.get_text, kwargs_list):
+                print(in_, "->", out, prepared_kwargs)
 
         or
 
@@ -182,14 +192,14 @@ class Runner:
                 {"params": {"messages": [{"role": "user", "content": "Hello"}]}},
                 {"params": {"messages": [{"role": "user", "content": "Bye"}]}},
             ]
-            for in_, out in runner.get_many(runner.single_token_probs, kwargs_list):
-                print(in_, "->", out)
+            for in_, (out, prepared_kwargs) in runner.get_many(runner.single_token_probs, kwargs_list):
+                print(in_, "->", out, prepared_kwargs)
 
         (FUNC that is a different callable should also work)
 
         This function returns a generator that yields pairs (input, output),
-        where input is an element from KWARGS_LIST and output is the thing returned by
-        FUNC for this input.
+        where input is an element from KWARGS_LIST and output is the tuple (result, prepared_kwargs)
+        returned by FUNC. prepared_kwargs contains the actual parameters sent to the API.
 
         Dictionaries in KWARGS_LIST might include optional keys starting with underscore,
         they are just ignored, but they are returned in the first element of the pair, so that's useful
@@ -230,7 +240,7 @@ class Runner:
                     f"Model: {self.model}, function: {func.__name__}{msg_info}. "
                     f"Error: {type(e).__name__}: {e}"
                 )
-                result = None
+                result = (None, {})
             return kwargs, result
 
         futures = [executor.submit(get_data, kwargs) for kwargs in kwargs_list]
@@ -251,13 +261,16 @@ class Runner:
         params: dict,
         *,
         num_samples: int,
-    ) -> dict:
+    ) -> tuple[dict, dict]:
         """Sample answers NUM_SAMPLES times. Returns probabilities of answers.
 
         Args:
             params: Dictionary of parameters for the API.
                 Must include 'messages'. Other common keys: 'max_tokens', 'temperature'.
             num_samples: Number of samples to collect.
+
+        Returns:
+            Tuple of (probs_dict, prepared_kwargs) where prepared_kwargs is what was sent to the API.
 
         Works only if the API supports `n` parameter.
 
@@ -268,6 +281,7 @@ class Runner:
           for Runner.single_token_probs.
         """
         cnts = defaultdict(int)
+        prepared = None
         for i in range(((num_samples - 1) // 128) + 1):
             n = min(128, num_samples - i * 128)
             # Build complete params with forced param
@@ -285,4 +299,4 @@ class Runner:
             )
         result = {key: val / num_samples for key, val in cnts.items()}
         result = dict(sorted(result.items(), key=lambda x: x[1], reverse=True))
-        return result
+        return result, prepared
