@@ -22,6 +22,7 @@ from llmcomp.question.plots import (
     rating_cumulative_plot,
 )
 from llmcomp.question.result import JudgeCache, Result
+from llmcomp.question.viewer import render_dataframe
 from llmcomp.runner.runner import Runner
 
 if TYPE_CHECKING:
@@ -183,6 +184,28 @@ class Question(ABC):
         """
         question_dict = cls.load_dict(name)
         return cls.create(**question_dict)
+
+    @classmethod
+    def view(cls, df: pd.DataFrame, *, open_browser: bool = True, port: int = 8501) -> None:
+        """Launch an interactive viewer to browse a results DataFrame.
+
+        Spawns a local Streamlit server that displays the DataFrame in a
+        convenient chat-style format for browsing (messages, answer) pairs.
+
+        Args:
+            df: DataFrame with at least 'messages' and 'answer' columns.
+                Typically the output of question.df(model_groups).
+                Other columns (model, group, judges, etc.) are displayed as metadata.
+            open_browser: If True, automatically open the viewer in default browser.
+                Default: True.
+            port: Port to run the Streamlit server on. Default: 8501.
+
+        Example:
+            >>> question = Question.create(type="free_form", paraphrases=["Hello!"])
+            >>> df = question.df({"gpt4": ["gpt-4o"]})
+            >>> Question.view(df)  # Opens browser with interactive viewer
+        """
+        render_dataframe(df, open_browser=open_browser, port=port)
 
     @classmethod
     def _load_question_config(cls):

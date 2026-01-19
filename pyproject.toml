@@ -23,6 +23,11 @@ dependencies = [
     "requests",
 ]
 
+[project.optional-dependencies]
+viewer = [
+    "streamlit>=1.20.0",
+]
+
 [project.scripts]
 llmcomp-update-jobs = "llmcomp.finetuning.update_jobs:main"
 
