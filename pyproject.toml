@@ -21,10 +21,6 @@ dependencies = [
     "pyyaml",
     "backoff",
     "requests",
-]
-
-[project.optional-dependencies]
-viewer = [
     "streamlit>=1.20.0",
 ]
 

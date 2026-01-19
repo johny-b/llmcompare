@@ -29,9 +29,9 @@ question = Question.create(
     samples_per_paraphrase=100,
     temperature=1,
 )
-question.plot(MODELS, min_fraction=0.03)
-df = question.df(MODELS)
-print(df.head(1).iloc[0])
+df = question.df(MODELS)  # Dataframe with the results
+question.plot(MODELS, min_fraction=0.03)  # Aggregated bar chart
+question.view(MODELS)  # Interactive browser for individual responses
 ```
 
 ## Main features
@@ -41,6 +41,7 @@ print(df.head(1).iloc[0])
 * **Parallel requests** - configurable concurrency across models
 * **Multi-key support** - use `OPENAI_API_KEY_0`, `OPENAI_API_KEY_1`, etc. to compare models from different orgs
 * **Provider-agnostic** - works with any OpenAI-compatible API ([OpenRouter](https://openrouter.ai/docs/quickstart#using-the-openai-sdk), [Tinker](https://tinker-docs.thinkingmachines.ai/compatible-apis/openai), etc.)
+* **Built-in viewer** - browse answers interactively with `question.view(MODELS)`
 * **Extensible** - highly configurable as long as your goal is comparing LLMs
 
 ## Cookbook

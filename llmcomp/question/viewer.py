@@ -22,35 +22,33 @@ from typing import Any
 # Streamlit imports are inside functions to avoid import errors when streamlit isn't installed
 
 
-def render_dataframe(df: "pd.DataFrame", open_browser: bool = True, port: int = 8501) -> None:
+def render_dataframe(
+    df: "pd.DataFrame",
+    sort_by: str | None = None,
+    sort_ascending: bool = True,
+    open_browser: bool = True,
+    port: int = 8501,
+) -> None:
     """Launch a Streamlit viewer for the DataFrame.
     
     Args:
         df: DataFrame with at least 'messages' and 'answer' columns.
             Other columns (model, group, etc.) are displayed as metadata.
+        sort_by: Column name to sort by initially. If None, keeps original order.
+        sort_ascending: Sort order. Default: True (ascending).
         open_browser: If True, automatically open the viewer in default browser.
         port: Port to run the Streamlit server on.
     
     Raises:
-        ImportError: If streamlit is not installed.
         ValueError: If required columns are missing.
     """
-    # Check if streamlit is installed
-    try:
-        import streamlit  # noqa: F401
-    except ImportError:
-        raise ImportError(
-            "Streamlit is required for the viewer. Install it with:\n"
-            "  pip install 'llmcomp[viewer]'\n"
-            "or:\n"
-            "  pip install streamlit"
-        )
-    
     # Validate required columns
     if "messages" not in df.columns:
         raise ValueError("DataFrame must have a 'messages' column")
     if "answer" not in df.columns:
         raise ValueError("DataFrame must have an 'answer' column")
+    if sort_by is not None and sort_by not in df.columns:
+        raise ValueError(f"sort_by column '{sort_by}' not found in DataFrame")
     
     # Save DataFrame to a temp file
     temp_dir = tempfile.mkdtemp(prefix="llmcomp_viewer_")
@@ -81,6 +79,8 @@ def render_dataframe(df: "pd.DataFrame", open_browser: bool = True, port: int = 
         "--server.headless", "true",
         "--",  # Separator for script args
         temp_path,
+        sort_by or "",  # Empty string means no sorting
+        "asc" if sort_ascending else "desc",
     ]
     
     try:
@@ -106,6 +106,19 @@ def _get_data_path() -> str | None:
     if len(sys.argv) > 1:
         return sys.argv[1]
     return None
+
+
+def _get_initial_sort() -> tuple[str | None, bool]:
+    """Get initial sort settings from command line args."""
+    sort_by = None
+    sort_ascending = True
+    
+    if len(sys.argv) > 2:
+        sort_by = sys.argv[2] if sys.argv[2] else None
+    if len(sys.argv) > 3:
+        sort_ascending = sys.argv[3] != "desc"
+    
+    return sort_by, sort_ascending
 
 
 def _read_jsonl(path: str) -> list[dict[str, Any]]:
@@ -179,28 +192,50 @@ def _display_metadata(row: dict[str, Any], exclude_keys: set[str]) -> None:
 
 
 def _search_items(items: list[dict[str, Any]], query: str) -> list[dict[str, Any]]:
-    """Filter items by search query."""
+    """Filter items by search query.
+    
+    Supports:
+        - Regular search: "foo" - includes items containing "foo"
+        - Negative search: "-foo" - excludes items containing "foo"
+        - Combined: "foo -bar" - items with "foo" but not "bar"
+    """
     if not query:
         return items
     
-    query_lower = query.lower()
+    # Parse query into positive and negative terms
+    terms = query.split()
+    positive_terms = []
+    negative_terms = []
+    
+    for term in terms:
+        if term.startswith("-") and len(term) > 1:
+            negative_terms.append(term[1:].lower())
+        else:
+            positive_terms.append(term.lower())
+    
     results = []
     
     for item in items:
-        # Search in messages
+        # Build searchable text from item
         messages = item.get("messages", [])
         messages_text = " ".join(m.get("content", "") for m in messages)
         
-        # Search in answer
         answer = item.get("answer", "")
         answer_text = str(answer) if not isinstance(answer, str) else answer
         
-        # Search in all string fields
         all_text = messages_text + " " + answer_text
         all_text += " " + " ".join(str(v) for v in item.values() if isinstance(v, str))
+        all_text_lower = all_text.lower()
         
-        if query_lower in all_text.lower():
-            results.append(item)
+        # Check positive terms (all must match)
+        if positive_terms and not all(term in all_text_lower for term in positive_terms):
+            continue
+        
+        # Check negative terms (none must match)
+        if any(term in all_text_lower for term in negative_terms):
+            continue
+        
+        results.append(item)
     
     return results
 
@@ -235,13 +270,94 @@ def _streamlit_main():
         st.warning("No data to display.")
         return
     
+    # Get sortable columns (numeric or string, exclude complex types)
+    sortable_columns = ["(none)"]
+    if items:
+        for key, value in items[0].items():
+            if key not in ("messages",) and isinstance(value, (int, float, str, type(None))):
+                sortable_columns.append(key)
+    
+    # Initialize sort settings from command line args
+    initial_sort_by, initial_sort_asc = _get_initial_sort()
+    if "sort_by" not in st.session_state:
+        st.session_state.sort_by = initial_sort_by if initial_sort_by in sortable_columns else "(none)"
+        st.session_state.sort_ascending = initial_sort_asc
+    
     # Initialize view index
     if "view_idx" not in st.session_state:
         st.session_state.view_idx = 0
     
-    # Search
-    query = st.text_input("🔍 Search", placeholder="Filter by content...")
+    # Initialize secondary sort
+    if "sort_by_2" not in st.session_state:
+        st.session_state.sort_by_2 = "(none)"
+        st.session_state.sort_ascending_2 = True
+    
+    # Search and sort controls
+    col_search, col_sort, col_order = st.columns([3, 2, 1])
+    
+    with col_search:
+        query = st.text_input("🔍 Search", placeholder="Filter... (use -term to exclude)")
+    
+    with col_sort:
+        sort_by = st.selectbox(
+            "Sort by",
+            options=sortable_columns,
+            index=sortable_columns.index(st.session_state.sort_by) if st.session_state.sort_by in sortable_columns else 0,
+            key="sort_by_select",
+        )
+        if sort_by != st.session_state.sort_by:
+            st.session_state.sort_by = sort_by
+            st.session_state.view_idx = 0  # Reset to first item when sort changes
+    
+    with col_order:
+        st.markdown("<br>", unsafe_allow_html=True)  # Align checkbox with selectbox
+        sort_ascending = st.checkbox("Asc", value=st.session_state.sort_ascending, key="sort_asc_check")
+        if sort_ascending != st.session_state.sort_ascending:
+            st.session_state.sort_ascending = sort_ascending
+            st.session_state.view_idx = 0
+    
+    # Secondary sort (only show if primary sort is selected)
+    if st.session_state.sort_by and st.session_state.sort_by != "(none)":
+        col_spacer, col_sort2, col_order2 = st.columns([3, 2, 1])
+        with col_sort2:
+            sort_by_2 = st.selectbox(
+                "Then by",
+                options=sortable_columns,
+                index=sortable_columns.index(st.session_state.sort_by_2) if st.session_state.sort_by_2 in sortable_columns else 0,
+                key="sort_by_select_2",
+            )
+            if sort_by_2 != st.session_state.sort_by_2:
+                st.session_state.sort_by_2 = sort_by_2
+                st.session_state.view_idx = 0
+        with col_order2:
+            st.markdown("<br>", unsafe_allow_html=True)  # Align checkbox with selectbox
+            sort_ascending_2 = st.checkbox("Asc", value=st.session_state.sort_ascending_2, key="sort_asc_check_2")
+            if sort_ascending_2 != st.session_state.sort_ascending_2:
+                st.session_state.sort_ascending_2 = sort_ascending_2
+                st.session_state.view_idx = 0
+    
+    # Apply search
     filtered_items = _search_items(items, query)
+    
+    # Apply sorting (stable sort - secondary first, then primary)
+    if st.session_state.sort_by and st.session_state.sort_by != "(none)" and filtered_items:
+        sort_key_2 = st.session_state.sort_by_2 if st.session_state.sort_by_2 != "(none)" else None
+        
+        # Secondary sort first (stable sort preserves this ordering within primary groups)
+        if sort_key_2:
+            filtered_items = sorted(
+                filtered_items,
+                key=lambda x: (x.get(sort_key_2) is None, x.get(sort_key_2)),
+                reverse=not st.session_state.sort_ascending_2,
+            )
+        
+        # Primary sort
+        sort_key = st.session_state.sort_by
+        filtered_items = sorted(
+            filtered_items,
+            key=lambda x: (x.get(sort_key) is None, x.get(sort_key)),
+            reverse=not st.session_state.sort_ascending,
+        )
     
     if not filtered_items:
         st.warning(f"No results found for '{query}'")
@@ -289,7 +405,7 @@ def _streamlit_main():
     current = filtered_items[st.session_state.view_idx]
     
     # Main content in two columns
-    left_col, right_col = st.columns([3, 2])
+    left_col, right_col = st.columns([1, 2])
     
     with left_col:
         st.subheader("💬 Messages")
@@ -300,7 +416,8 @@ def _streamlit_main():
             st.info("No messages")
     
     with right_col:
-        st.subheader("🤖 Response")
+        model_name = current.get("model", "Response")
+        st.subheader(f"🤖 {model_name}")
         answer = current.get("answer")
         if answer is not None:
             _display_answer(answer, label=None)
@@ -312,9 +429,14 @@ def _streamlit_main():
             "messages", "answer", "question", "model", "group", "paraphrase_ix", "raw_answer"
         } and not k.endswith("_question") and not k.endswith("_raw_answer")]
         
-        for judge_col in judge_columns:
-            st.divider()
-            _display_answer(current[judge_col], label=f"Judge: {judge_col}")
+        if judge_columns:
+            st.markdown("---")
+            for judge_col in judge_columns:
+                value = current[judge_col]
+                if isinstance(value, float):
+                    st.markdown(f"**{judge_col}:** {value:.2f}")
+                else:
+                    st.markdown(f"**{judge_col}:** {value}")
     
     # Metadata at the bottom
     st.divider()

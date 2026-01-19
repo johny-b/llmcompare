@@ -531,5 +531,9 @@ Question subclass instance.
 
     >>> q = Question.from_yaml("my_question")
 
+#### `view(self, df: 'pd.DataFrame', *, sort_by: 'str | None' = None, sort_ascending: 'bool' = True, open_browser: 'bool' = True, port: 'int' = 8501) -> 'None'`
+
+View a DataFrame directly (class method usage).
+
 
 ---

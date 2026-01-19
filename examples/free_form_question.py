@@ -20,10 +20,15 @@ question = Question.create(
         "Name an interesting book. Answer with the name, nothing more. Give the full name without quotes.",
     ],
     samples_per_paraphrase=100,
-    temperature=1,  # 1 is thedefault value
+    temperature=1,  # 1 is the default value
 )
 
+# Use directly a dataframe with the results
+df = question.df(MODELS)
+
+# Or plot aggregated results
 question.plot(MODELS, min_fraction=0.03)
 
-df = question.df(MODELS)
-print(df.head(1).iloc[0])
+# Or browse individual responses in the interactive viewer
+question.view(MODELS)
+
