@@ -261,7 +261,6 @@ class Question(ABC):
         selected_answers: list[str] = None,
         min_fraction: float = None,
         colors: dict[str, str] = None,
-        show_mean: bool = True,
         title: str = None,
         filename: str = None,
     ):
@@ -271,7 +270,6 @@ class Question(ABC):
         if title is None:
             title = default_title(self.paraphrases)
 
-        # Detect plot type from self type
         if isinstance(self, Rating):
             return rating_cumulative_plot(
                 df,
@@ -279,7 +277,7 @@ class Question(ABC):
                 max_rating=self.max_rating,
                 category_column=category_column,
                 model_groups=model_groups,
-                show_mean=show_mean,
+                show_mean=True,
                 title=title,
                 filename=filename,
             )
