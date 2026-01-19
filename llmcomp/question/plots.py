@@ -2,13 +2,66 @@ import matplotlib.pyplot as plt
 import pandas as pd
 
 
-def default_title(paraphrases: list[str] | None) -> str | None:
-    """Generate default plot title from paraphrases."""
-    if paraphrases is None:
-        return None
-    if len(paraphrases) == 1:
-        return paraphrases[0]
-    return paraphrases[0] + f"\nand {len(paraphrases) - 1} other paraphrases"
+def plot(
+    df: pd.DataFrame,
+    question_type: str,
+    answer_column: str,
+    category_column: str = "group",
+    category_order: list[str] = None,
+    min_rating: int = None,
+    max_rating: int = None,
+    selected_answers: list[str] = None,
+    min_fraction: float = None,
+    colors: dict[str, str] = None,
+    title: str = None,
+    selected_paraphrase: str = None,
+    filename: str = None,
+):
+    if title is None:
+        questions = sorted(df["question"].unique())
+        if selected_paraphrase is None:
+            selected_paraphrase = questions[0]
+        num_paraphrases = len(questions)
+        if num_paraphrases == 1:
+            title = selected_paraphrase
+        else:
+            title = selected_paraphrase + f"\nand {num_paraphrases - 1} other paraphrases"
+
+    if question_type == "rating":
+        return rating_cumulative_plot(
+            df,
+            min_rating=min_rating,
+            max_rating=max_rating,
+            probs_column=answer_column,
+            category_column=category_column,
+            category_order=category_order,
+            title=title,
+            filename=filename,
+        )
+    elif question_type == "next_token":
+        return probs_stacked_bar(
+            df,
+            probs_column=answer_column,
+            category_column=category_column,
+            category_order=category_order,
+            selected_answers=selected_answers,
+            min_fraction=min_fraction,
+            colors=colors,
+            title=title,
+            filename=filename,
+        )
+    else:
+        return free_form_stacked_bar(
+            df,
+            category_column=category_column,
+            answer_column=answer_column,
+            category_order=category_order,
+            selected_answers=selected_answers,
+            min_fraction=min_fraction,
+            colors=colors,
+            title=title,
+            filename=filename,
+        )
 
 
 def rating_cumulative_plot(

@@ -15,12 +15,7 @@ import yaml
 from tqdm import tqdm
 
 from llmcomp.config import Config
-from llmcomp.question.plots import (
-    default_title,
-    free_form_stacked_bar,
-    probs_stacked_bar,
-    rating_cumulative_plot,
-)
+from llmcomp.question.plots import plot as plots_plot
 from llmcomp.question.result import JudgeCache, Result
 from llmcomp.question.viewer import render_dataframe
 from llmcomp.runner.runner import Runner
@@ -267,17 +262,12 @@ class Question(ABC):
         if df is None:
             df = self.df(model_groups)
 
-        if title is None:
-            title = default_title(self.paraphrases)
-
-        # Type-specific default for answer_column
         if answer_column is None:
             if isinstance(self, Rating):
                 answer_column = "probs"
             else:
                 answer_column = "answer"
 
-        # Compute category_order from model_groups
         if category_column == "group":
             category_order = list(model_groups.keys())
         elif category_column == "model":
@@ -285,41 +275,21 @@ class Question(ABC):
         else:
             category_order = None
 
-        if isinstance(self, Rating):
-            return rating_cumulative_plot(
-                df,
-                min_rating=self.min_rating,
-                max_rating=self.max_rating,
-                probs_column=answer_column,
-                category_column=category_column,
-                category_order=category_order,
-                title=title,
-                filename=filename,
-            )
-        elif isinstance(self, NextToken):
-            return probs_stacked_bar(
-                df,
-                probs_column=answer_column,
-                category_column=category_column,
-                category_order=category_order,
-                selected_answers=selected_answers,
-                min_fraction=min_fraction,
-                colors=colors,
-                title=title,
-                filename=filename,
-            )
-        else:
-            return free_form_stacked_bar(
-                df,
-                category_column=category_column,
-                answer_column=answer_column,
-                category_order=category_order,
-                selected_answers=selected_answers,
-                min_fraction=min_fraction,
-                colors=colors,
-                title=title,
-                filename=filename,
-            )
+        return plots_plot(
+            df,
+            question_type=self.type(),
+            answer_column=answer_column,
+            category_column=category_column,
+            category_order=category_order,
+            min_rating=getattr(self, "min_rating", None),
+            max_rating=getattr(self, "max_rating", None),
+            selected_answers=selected_answers,
+            min_fraction=min_fraction,
+            colors=colors,
+            title=title,
+            selected_paraphrase=self.paraphrases[0] if title is None else None,
+            filename=filename,
+        )
 
     @classmethod
     def _load_question_config(cls):
