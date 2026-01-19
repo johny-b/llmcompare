@@ -85,6 +85,95 @@ class _ViewMethod:
             port=port,
         )
 
+
+class _PlotMethod:
+    def __get__(self, obj, objtype=None):
+        if obj is None:
+            return self._class_plot
+        else:
+            return lambda *args, **kwargs: self._instance_plot(obj, *args, **kwargs)
+
+    def _class_plot(
+        self,
+        df: pd.DataFrame,
+        category_column: str = "group",
+        answer_column: str = "answer",
+        selected_categories: list[str] = None,
+        selected_answers: list[str] = None,
+        min_fraction: float = None,
+        colors: dict[str, str] = None,
+        title: str = None,
+        filename: str = None,
+    ):
+        if isinstance(df, dict):
+            raise TypeError(
+                "Question.plot() expects a DataFrame, not a dict.\n"
+                "To plot model results, use an instance: question.plot(model_groups)\n"
+                "Or pass a DataFrame: Question.plot(question.df(model_groups))"
+            )
+        return plots_plot(
+            df,
+            answer_column=answer_column,
+            category_column=category_column,
+            selected_categories=selected_categories,
+            selected_answers=selected_answers,
+            min_fraction=min_fraction,
+            colors=colors,
+            title=title,
+            filename=filename,
+        )
+
+    def _instance_plot(
+        self,
+        instance: "Question",
+        model_groups_or_df: dict[str, list[str]] | pd.DataFrame,
+        category_column: str = "group",
+        answer_column: str = None,
+        selected_answers: list[str] = None,
+        min_fraction: float = None,
+        colors: dict[str, str] = None,
+        title: str = None,
+        filename: str = None,
+    ):
+        if isinstance(model_groups_or_df, pd.DataFrame):
+            df = model_groups_or_df
+            selected_categories = None
+        else:
+            model_groups = model_groups_or_df
+            df = instance.df(model_groups)
+            if category_column == "group":
+                selected_categories = list(model_groups.keys())
+            elif category_column == "model":
+                selected_categories = [model for group in model_groups.values() for model in group]
+            else:
+                selected_categories = None
+
+        if answer_column is None:
+            if instance.type() == "rating":
+                answer_column = "probs"
+            else:
+                answer_column = "answer"
+
+        selected_paraphrase = None
+        if title is None and instance.paraphrases is not None:
+            selected_paraphrase = instance.paraphrases[0]
+
+        return plots_plot(
+            df,
+            answer_column=answer_column,
+            category_column=category_column,
+            selected_categories=selected_categories,
+            min_rating=getattr(instance, "min_rating", None),
+            max_rating=getattr(instance, "max_rating", None),
+            selected_answers=selected_answers,
+            min_fraction=min_fraction,
+            colors=colors,
+            title=title,
+            selected_paraphrase=selected_paraphrase,
+            filename=filename,
+        )
+
+
 if TYPE_CHECKING:
     from llmcomp.question.judge import FreeFormJudge, RatingJudge
     from llmcomp.question.question import Question
@@ -246,53 +335,7 @@ class Question(ABC):
         return cls.create(**question_dict)
 
     view = _ViewMethod()
-
-    def plot(
-        self,
-        model_groups: dict[str, list[str]],
-        category_column: str = "group",
-        answer_column: str = None,
-        df: pd.DataFrame = None,
-        selected_answers: list[str] = None,
-        min_fraction: float = None,
-        colors: dict[str, str] = None,
-        title: str = None,
-        filename: str = None,
-    ):
-        if df is None:
-            df = self.df(model_groups)
-
-        if answer_column is None:
-            if isinstance(self, Rating):
-                answer_column = "probs"
-            else:
-                answer_column = "answer"
-
-        if category_column == "group":
-            selected_categories = list(model_groups.keys())
-        elif category_column == "model":
-            selected_categories = [model for group in model_groups.values() for model in group]
-        else:
-            selected_categories = None
-
-        selected_paraphrase = None
-        if title is None and self.paraphrases is not None:
-            selected_paraphrase = self.paraphrases[0]
-
-        return plots_plot(
-            df,
-            answer_column=answer_column,
-            category_column=category_column,
-            selected_categories=selected_categories,
-            min_rating=getattr(self, "min_rating", None),
-            max_rating=getattr(self, "max_rating", None),
-            selected_answers=selected_answers,
-            min_fraction=min_fraction,
-            colors=colors,
-            title=title,
-            selected_paraphrase=selected_paraphrase,
-            filename=filename,
-        )
+    plot = _PlotMethod()
 
     @classmethod
     def _load_question_config(cls):
