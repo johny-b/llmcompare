@@ -251,30 +251,64 @@ class Question(ABC):
         return cls.create(**question_dict)
 
     view = _ViewMethod()
-    """Launch an interactive viewer to browse results.
 
-    Spawns a local Streamlit server that displays results in a
-    convenient chat-style format for browsing (messages, answer) pairs.
+    def plot(
+        self,
+        model_groups: dict[str, list[str]],
+        category_column: str = "group",
+        answer_column: str = "answer",
+        df: pd.DataFrame = None,
+        selected_answers: list[str] = None,
+        min_fraction: float = None,
+        colors: dict[str, str] = None,
+        show_mean: bool = True,
+        title: str = None,
+        filename: str = None,
+    ):
+        if df is None:
+            df = self.df(model_groups)
 
-    Can be called as:
-        - Question.view(df) - view a DataFrame directly
-        - question.view(model_groups) - run df() on models, then view
-        - question.view(df) - view a DataFrame directly
+        if title is None:
+            title = default_title(self.paraphrases)
 
-    Args:
-        model_groups_or_df: Either:
-            - Dict mapping group names to model lists (instance call only)
-            - DataFrame with 'messages' and 'answer' columns
-        sort_by: Column name to sort by. If None, keeps original order.
-        sort_ascending: Sort order. Default: True (ascending).
-        open_browser: If True, open viewer in default browser. Default: True.
-        port: Port for Streamlit server. Default: 8501.
-
-    Example:
-        >>> question = Question.create(type="free_form", paraphrases=["Hello!"])
-        >>> question.view({"gpt4": ["gpt-4o"]})  # Run and view
-        >>> Question.view(df)  # View existing DataFrame
-    """
+        # Detect plot type from self type
+        if isinstance(self, Rating):
+            return rating_cumulative_plot(
+                df,
+                min_rating=self.min_rating,
+                max_rating=self.max_rating,
+                category_column=category_column,
+                model_groups=model_groups,
+                show_mean=show_mean,
+                title=title,
+                filename=filename,
+            )
+        elif isinstance(self, NextToken):
+            df = df.rename(columns={"answer": "probs"})
+            return probs_stacked_bar(
+                df,
+                probs_column="probs",
+                category_column=category_column,
+                model_groups=model_groups,
+                selected_answers=selected_answers,
+                min_fraction=min_fraction,
+                colors=colors,
+                title=title,
+                filename=filename,
+            )
+        else:
+            # FreeForm or other
+            return free_form_stacked_bar(
+                df,
+                category_column=category_column,
+                answer_column=answer_column,
+                model_groups=model_groups,
+                selected_answers=selected_answers,
+                min_fraction=min_fraction,
+                colors=colors,
+                title=title,
+                filename=filename,
+            )
 
     @classmethod
     def _load_question_config(cls):
@@ -720,53 +754,6 @@ class FreeForm(Question):
 
         return df
 
-    def plot(
-        self,
-        model_groups: dict[str, list[str]],
-        category_column: str = "group",
-        answer_column: str = "answer",
-        df: pd.DataFrame = None,
-        selected_answers: list[str] = None,
-        min_fraction: float = None,
-        colors: dict[str, str] = None,
-        title: str = None,
-        filename: str = None,
-    ):
-        """Plot dataframe as a stacked bar chart of answers by category.
-
-        Args:
-            model_groups: Required. Dict mapping group names to lists of model identifiers.
-            category_column: Column to use for x-axis categories. Default: "group".
-            answer_column: Column containing answers to plot. Default: "answer".
-                Use a judge column name to plot judge scores instead.
-            df: DataFrame to plot. By default calls self.df(model_groups).
-            selected_answers: List of specific answers to include. Others grouped as "other".
-            min_fraction: Minimum fraction threshold. Answers below this are grouped as "other".
-            colors: Dict mapping answer values to colors.
-            title: Plot title. If None, auto-generated from paraphrases.
-            filename: If provided, saves the plot to this file path.
-
-        Returns:
-            matplotlib Figure object.
-        """
-        if df is None:
-            df = self.df(model_groups)
-
-        if title is None:
-            title = default_title(self.paraphrases)
-
-        return free_form_stacked_bar(
-            df,
-            category_column=category_column,
-            answer_column=answer_column,
-            model_groups=model_groups,
-            selected_answers=selected_answers,
-            min_fraction=min_fraction,
-            colors=colors,
-            title=title,
-            filename=filename,
-        )
-
     def _parse_judges(self, judges: dict[str, str | dict] | None) -> dict[str, "Question"] | None:
         """Parse and validate judges dictionary."""
         if judges is None:
@@ -920,54 +907,9 @@ class Rating(Question):
         return {k: v / total for k, v in probs.items()}
 
     def _compute_expected_rating(self, probs: dict[int, float] | None) -> float | None:
-        """Compute expected rating from normalized probs distribution."""
         if probs is None:
             return None
-
         return sum(rating * prob for rating, prob in probs.items())
-
-    def plot(
-        self,
-        model_groups: dict[str, list[str]],
-        category_column: str = "group",
-        df: pd.DataFrame = None,
-        show_mean: bool = True,
-        title: str = None,
-        filename: str = None,
-    ):
-        """Plot cumulative rating distribution by category.
-
-        Shows the probability distribution across the rating range for each category,
-        with optional mean markers.
-
-        Args:
-            model_groups: Required. Dict mapping group names to lists of model identifiers.
-            category_column: Column to use for grouping. Default: "group".
-            df: DataFrame to plot. By default calls self.df(model_groups).
-            show_mean: If True, displays mean rating for each category. Default: True.
-            title: Plot title. If None, auto-generated from paraphrases.
-            filename: If provided, saves the plot to this file path.
-
-        Returns:
-            matplotlib Figure object.
-        """
-        if df is None:
-            df = self.df(model_groups)
-
-        if title is None:
-            title = default_title(self.paraphrases)
-
-        # probs column already exists in df from self.df()
-        return rating_cumulative_plot(
-            df,
-            min_rating=self.min_rating,
-            max_rating=self.max_rating,
-            category_column=category_column,
-            model_groups=model_groups,
-            show_mean=show_mean,
-            title=title,
-            filename=filename,
-        )
 
 
 class NextToken(Question):
@@ -1019,68 +961,4 @@ class NextToken(Question):
         return runner_input
 
     def df(self, model_groups: dict[str, list[str]]) -> pd.DataFrame:
-        """Execute question and return results as a DataFrame.
-
-        Runs the question on all models (or loads from cache).
-
-        Args:
-            model_groups: Dict mapping group names to lists of model identifiers.
-                Example: {"gpt4": ["gpt-4o", "gpt-4-turbo"], "claude": ["claude-3-opus"]}
-
-        Returns:
-            DataFrame with columns:
-                - model: Model identifier
-                - group: Group name from model_groups
-                - answer: Dict mapping tokens to probabilities {token: prob}
-                - question: The prompt that was sent
-                - messages: Full message list sent to model
-                - paraphrase_ix: Index of the paraphrase used
-        """
         return super().df(model_groups)
-
-    def plot(
-        self,
-        model_groups: dict[str, list[str]],
-        category_column: str = "group",
-        df: pd.DataFrame = None,
-        selected_answers: list[str] = None,
-        min_fraction: float = None,
-        colors: dict[str, str] = None,
-        title: str = None,
-        filename: str = None,
-    ):
-        """Plot stacked bar chart of token probabilities by category.
-
-        Args:
-            model_groups: Required. Dict mapping group names to lists of model identifiers.
-            category_column: Column to use for x-axis categories. Default: "group".
-            df: DataFrame to plot. By default calls self.df(model_groups).
-            selected_answers: List of specific tokens to include. Others grouped as "other".
-            min_fraction: Minimum probability threshold. Tokens below this are grouped as "other".
-            colors: Dict mapping token values to colors.
-            title: Plot title. If None, auto-generated from paraphrases.
-            filename: If provided, saves the plot to this file path.
-
-        Returns:
-            matplotlib Figure object.
-        """
-        if df is None:
-            df = self.df(model_groups)
-
-        if title is None:
-            title = default_title(self.paraphrases)
-
-        # answer column already contains {token: prob} dicts
-        df = df.rename(columns={"answer": "probs"})
-
-        return probs_stacked_bar(
-            df,
-            probs_column="probs",
-            category_column=category_column,
-            model_groups=model_groups,
-            selected_answers=selected_answers,
-            min_fraction=min_fraction,
-            colors=colors,
-            title=title,
-            filename=filename,
-        )
