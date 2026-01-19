@@ -34,7 +34,8 @@ def plot(
 
     if stacked_bar_args:
         # Stacked bar specific args provided
-        sample_value = df[answer_column].dropna().iloc[0] if len(df) > 0 else None
+        non_null = df[answer_column].dropna()
+        sample_value = non_null.iloc[0] if len(non_null) > 0 else None
         if isinstance(sample_value, dict):
             return probs_stacked_bar(
                 df,
@@ -61,7 +62,8 @@ def plot(
             )
 
     # Check if data contains dicts with integer keys (rating probs)
-    sample_value = df[answer_column].dropna().iloc[0] if len(df) > 0 else None
+    non_null = df[answer_column].dropna()
+    sample_value = non_null.iloc[0] if len(non_null) > 0 else None
     if isinstance(sample_value, dict) and sample_value and all(isinstance(k, int) for k in sample_value.keys()):
         # Infer min_rating and max_rating from data if not provided
         if min_rating is None or max_rating is None:
@@ -158,6 +160,7 @@ def rating_cumulative_plot(
     if filename is not None:
         plt.savefig(filename, bbox_inches="tight")
     plt.show()
+    return fig
 
 
 def probs_stacked_bar(
@@ -190,7 +193,12 @@ def probs_stacked_bar(
             category_probs[category] = {k: v / n_rows for k, v in combined.items()}
 
     if not category_probs:
-        return
+        fig, ax = plt.subplots()
+        ax.text(0.5, 0.5, "No data to plot", ha="center", va="center", transform=ax.transAxes)
+        if title is not None:
+            ax.set_title(title)
+        plt.show()
+        return fig
 
     # Find answers meeting min_fraction threshold
     if min_fraction is not None:
@@ -294,6 +302,7 @@ def probs_stacked_bar(
     if filename is not None:
         plt.savefig(filename, bbox_inches="tight")
     plt.show()
+    return fig
 
 
 def free_form_stacked_bar(
