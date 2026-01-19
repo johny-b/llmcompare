@@ -256,7 +256,7 @@ class Question(ABC):
         self,
         model_groups: dict[str, list[str]],
         category_column: str = "group",
-        answer_column: str = "answer",
+        answer_column: str = None,
         df: pd.DataFrame = None,
         selected_answers: list[str] = None,
         min_fraction: float = None,
@@ -270,24 +270,38 @@ class Question(ABC):
         if title is None:
             title = default_title(self.paraphrases)
 
+        # Type-specific default for answer_column
+        if answer_column is None:
+            if isinstance(self, Rating):
+                answer_column = "probs"
+            else:
+                answer_column = "answer"
+
+        # Compute category_order from model_groups
+        if category_column == "group":
+            category_order = list(model_groups.keys())
+        elif category_column == "model":
+            category_order = [model for group in model_groups.values() for model in group]
+        else:
+            category_order = None
+
         if isinstance(self, Rating):
             return rating_cumulative_plot(
                 df,
                 min_rating=self.min_rating,
                 max_rating=self.max_rating,
+                probs_column=answer_column,
                 category_column=category_column,
-                model_groups=model_groups,
-                show_mean=True,
+                category_order=category_order,
                 title=title,
                 filename=filename,
             )
         elif isinstance(self, NextToken):
-            df = df.rename(columns={"answer": "probs"})
             return probs_stacked_bar(
                 df,
-                probs_column="probs",
+                probs_column=answer_column,
                 category_column=category_column,
-                model_groups=model_groups,
+                category_order=category_order,
                 selected_answers=selected_answers,
                 min_fraction=min_fraction,
                 colors=colors,
@@ -295,12 +309,11 @@ class Question(ABC):
                 filename=filename,
             )
         else:
-            # FreeForm or other
             return free_form_stacked_bar(
                 df,
                 category_column=category_column,
                 answer_column=answer_column,
-                model_groups=model_groups,
+                category_order=category_order,
                 selected_answers=selected_answers,
                 min_fraction=min_fraction,
                 colors=colors,
