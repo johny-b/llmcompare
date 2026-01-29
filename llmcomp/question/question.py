@@ -489,6 +489,10 @@ class Question(ABC):
         cache_file = Result.file_path(self, model)
         if os.path.exists(cache_file):
             os.remove(cache_file)
+            # Also remove lock file if present
+            lock_file = cache_file + ".lock"
+            if os.path.exists(lock_file):
+                os.remove(lock_file)
             # Clean up empty directory
             cache_dir = os.path.dirname(cache_file)
             if os.path.isdir(cache_dir) and not os.listdir(cache_dir):

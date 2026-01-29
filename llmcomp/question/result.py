@@ -1,12 +1,37 @@
 import hashlib
 import json
 import os
+import tempfile
 from dataclasses import dataclass
 from datetime import datetime
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Callable, TextIO
+
+import filelock
 
 from llmcomp.config import Config
 from llmcomp.runner.model_adapter import ModelAdapter
+
+
+def atomic_write(path: str, write_fn: Callable[[TextIO], None]) -> None:
+    """Write to a file atomically with file locking.
+    
+    Args:
+        path: Target file path.
+        write_fn: Function that takes a file handle and writes content.
+    """
+    dir_path = os.path.dirname(path)
+    os.makedirs(dir_path, exist_ok=True)
+    
+    lock = filelock.FileLock(path + ".lock")
+    with lock:
+        fd, temp_path = tempfile.mkstemp(dir=dir_path, suffix=".tmp")
+        try:
+            with os.fdopen(fd, "w") as f:
+                write_fn(f)
+            os.replace(temp_path, path)
+        except:
+            os.unlink(temp_path)
+            raise
 
 if TYPE_CHECKING:
     from llmcomp.question.question import Question
@@ -80,12 +105,12 @@ class Result:
         return f"{Config.cache_dir}/question/{question.name}/{cache_hash(question, model)[:7]}.jsonl"
 
     def save(self):
-        path = self.file_path(self.question, self.model)
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        with open(path, "w") as f:
+        def write_fn(f):
             f.write(json.dumps(self._metadata()) + "\n")
             for d in self.data:
                 f.write(json.dumps(d) + "\n")
+        
+        atomic_write(self.file_path(self.question, self.model), write_fn)
 
     @classmethod
     def load(cls, question: "Question", model: str) -> "Result":
@@ -189,18 +214,16 @@ class JudgeCache:
         return self._data
 
     def save(self):
-        """Save cache to disk."""
+        """Save cache to disk with file locking for concurrent access."""
         if self._data is None:
             return
 
-        path = self.file_path(self.judge)
-        os.makedirs(os.path.dirname(path), exist_ok=True)
         file_data = {
             "metadata": self._metadata(),
             "data": self._data,
         }
-        with open(path, "w") as f:
-            json.dump(file_data, f, indent=2)
+        
+        atomic_write(self.file_path(self.judge), lambda f: json.dump(file_data, f, indent=2))
 
     def _metadata(self) -> dict:
         return {
