@@ -69,7 +69,7 @@ def render_dataframe(
     if open_browser:
         # Open browser after a short delay to let server start
         import threading
-        threading.Timer(1.5, lambda: webbrowser.open(url)).start()
+        threading.Timer(0.5, lambda: webbrowser.open(url)).start()
     
     # Launch Streamlit
     viewer_path = Path(__file__).resolve()
