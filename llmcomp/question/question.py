@@ -41,12 +41,17 @@ class _ViewMethod:
         self,
         df: pd.DataFrame,
         *,
-        sort_by: str | None = None,
+        sort_by: str | None = "__random__",
         sort_ascending: bool = True,
         open_browser: bool = True,
         port: int = 8501,
     ) -> None:
-        """View a DataFrame directly (class method usage)."""
+        """View a DataFrame directly (class method usage).
+        
+        Args:
+            sort_by: Column to sort by. Default "__random__" shuffles rows randomly
+                (new seed on each browser refresh). Use None for original order.
+        """
         if isinstance(df, dict):
             raise TypeError(
                 "Question.view() expects a DataFrame, not a dict.\n"
@@ -66,12 +71,17 @@ class _ViewMethod:
         instance: "Question",
         model_groups_or_df: dict[str, list[str]] | pd.DataFrame,
         *,
-        sort_by: str | None = None,
+        sort_by: str | None = "__random__",
         sort_ascending: bool = True,
         open_browser: bool = True,
         port: int = 8501,
     ) -> None:
-        """View results (instance method usage)."""
+        """View results (instance method usage).
+        
+        Args:
+            sort_by: Column to sort by. Default "__random__" shuffles rows randomly
+                (new seed on each browser refresh). Use None for original order.
+        """
         if isinstance(model_groups_or_df, pd.DataFrame):
             df = model_groups_or_df
         else:

@@ -24,7 +24,7 @@ from typing import Any
 
 def render_dataframe(
     df: "pd.DataFrame",
-    sort_by: str | None = None,
+    sort_by: str | None = "__random__",
     sort_ascending: bool = True,
     open_browser: bool = True,
     port: int = 8501,
@@ -34,7 +34,8 @@ def render_dataframe(
     Args:
         df: DataFrame with at least 'api_kwargs' and 'answer' columns.
             Other columns (model, group, etc.) are displayed as metadata.
-        sort_by: Column name to sort by initially. If None, keeps original order.
+        sort_by: Column name to sort by initially. Default: "__random__" for random
+            shuffling (new seed on each refresh). Use None for original order.
         sort_ascending: Sort order. Default: True (ascending).
         open_browser: If True, automatically open the viewer in default browser.
         port: Port to run the Streamlit server on.
@@ -47,7 +48,7 @@ def render_dataframe(
         raise ValueError("DataFrame must have an 'api_kwargs' column")
     if "answer" not in df.columns:
         raise ValueError("DataFrame must have an 'answer' column")
-    if sort_by is not None and sort_by not in df.columns:
+    if sort_by is not None and sort_by != "__random__" and sort_by not in df.columns:
         raise ValueError(f"sort_by column '{sort_by}' not found in DataFrame")
     
     # Save DataFrame to a temp file
@@ -272,7 +273,7 @@ def _streamlit_main():
         return
     
     # Get sortable columns (numeric or string, exclude complex types)
-    sortable_columns = ["(none)"]
+    sortable_columns = ["(random)", "(none)"]
     if items:
         for key, value in items[0].items():
             if key not in ("api_kwargs",) and isinstance(value, (int, float, str, type(None))):
@@ -281,7 +282,13 @@ def _streamlit_main():
     # Initialize sort settings from command line args
     initial_sort_by, initial_sort_asc = _get_initial_sort()
     if "sort_by" not in st.session_state:
-        st.session_state.sort_by = initial_sort_by if initial_sort_by in sortable_columns else "(none)"
+        # Map __random__ from CLI to (random) in UI
+        if initial_sort_by == "__random__":
+            st.session_state.sort_by = "(random)"
+        elif initial_sort_by in sortable_columns:
+            st.session_state.sort_by = initial_sort_by
+        else:
+            st.session_state.sort_by = "(none)"
         st.session_state.sort_ascending = initial_sort_asc
     
     # Initialize view index
@@ -317,6 +324,16 @@ def _streamlit_main():
             st.session_state.sort_ascending = sort_ascending
             st.session_state.view_idx = 0
     
+    # Reshuffle button for random sort
+    if st.session_state.sort_by == "(random)":
+        import random
+        col_reshuffle, _ = st.columns([1, 5])
+        with col_reshuffle:
+            if st.button("🔀 Reshuffle"):
+                st.session_state.random_seed = random.randint(0, 2**32 - 1)
+                st.session_state.view_idx = 0
+                st.rerun()
+    
     # Secondary sort (only show if primary sort is selected)
     if st.session_state.sort_by and st.session_state.sort_by != "(none)":
         col_spacer, col_sort2, col_order2 = st.columns([3, 2, 1])
@@ -340,8 +357,18 @@ def _streamlit_main():
     # Apply search
     filtered_items = _search_items(items, query)
     
+    # Apply random shuffle if selected (new seed on each refresh via Reshuffle button)
+    if st.session_state.sort_by == "(random)" and filtered_items:
+        import random
+        # Generate a new seed on first load or when explicitly reshuffled
+        if "random_seed" not in st.session_state:
+            st.session_state.random_seed = random.randint(0, 2**32 - 1)
+        rng = random.Random(st.session_state.random_seed)
+        filtered_items = filtered_items.copy()
+        rng.shuffle(filtered_items)
+    
     # Apply sorting (stable sort - secondary first, then primary)
-    if st.session_state.sort_by and st.session_state.sort_by != "(none)" and filtered_items:
+    if st.session_state.sort_by and st.session_state.sort_by not in ("(none)", "(random)") and filtered_items:
         sort_key_2 = st.session_state.sort_by_2 if st.session_state.sort_by_2 != "(none)" else None
         
         # Secondary sort first (stable sort preserves this ordering within primary groups)
