@@ -16,6 +16,18 @@ def plot(
     selected_paraphrase: str = None,
     filename: str = None,
 ):
+    if df.empty:
+        raise ValueError("No data to plot, the dataframe is empty")
+
+    # Validate category_column contains hashable values (not dicts/lists)
+    if category_column in df.columns:
+        sample = df[category_column].dropna().iloc[0] if len(df[category_column].dropna()) > 0 else None
+        if isinstance(sample, (dict, list)):
+            raise ValueError(
+                f"Column '{category_column}' contains unhashable types ({type(sample).__name__}) "
+                f"and cannot be used as category_column. Did you mean answer_column='{category_column}'?"
+            )
+
     # When plotting by model without explicit ordering, sort models by their group
     if category_column == "model" and selected_categories is None and "group" in df.columns:
         # Get first group for each model (assumes each model in single group)
