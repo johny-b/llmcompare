@@ -16,6 +16,14 @@ def plot(
     selected_paraphrase: str = None,
     filename: str = None,
 ):
+    # When plotting by model without explicit ordering, sort models by their group
+    if category_column == "model" and selected_categories is None and "group" in df.columns:
+        # Get first group for each model (assumes each model in single group)
+        model_to_group = df.groupby("model")["group"].first().reset_index()
+        # Sort by group, then by model name within group
+        model_to_group = model_to_group.sort_values(["group", "model"])
+        selected_categories = model_to_group["model"].tolist()
+
     if selected_categories is not None:
         df = df[df[category_column].isin(selected_categories)]
 
