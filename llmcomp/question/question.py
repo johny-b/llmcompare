@@ -629,7 +629,7 @@ class FreeForm(Question):
         *,
         temperature: float = 1,
         max_tokens: int = 1024,
-        judges: dict[str, str | dict] = None,
+        judges: dict[str, str | dict | FreeFormJudge | RatingJudge] | None = None,
         **kwargs,
     ):
         """Initialize a FreeForm question.
@@ -830,7 +830,10 @@ class FreeForm(Question):
 
         return df
 
-    def _parse_judges(self, judges: dict[str, str | dict] | None) -> dict[str, "Question"] | None:
+    def _parse_judges(
+        self, 
+        judges: dict[str, str | dict | FreeFormJudge | RatingJudge] | None
+    ) -> dict[str, FreeFormJudge | RatingJudge] | None:
         """Parse and validate judges dictionary."""
         if judges is None:
             return None
