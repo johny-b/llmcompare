@@ -187,7 +187,9 @@ def _display_metadata(row: dict[str, Any], exclude_keys: set[str]) -> None:
             for key, value in metadata.items():
                 if isinstance(value, (dict, list)):
                     st.markdown(f"**{key}:**")
-                    st.json(value)
+                    # Collapse _raw_answer and _probs dicts by default
+                    collapsed = key.endswith("_raw_answer") or key.endswith("_probs")
+                    st.json(value, expanded=not collapsed)
                 else:
                     st.markdown(f"**{key}:** {value}")
 
@@ -456,7 +458,7 @@ def _streamlit_main():
         # Display judge columns if present
         judge_columns = [k for k in current.keys() if not k.startswith("_") and k not in {
             "api_kwargs", "answer", "question", "model", "group", "paraphrase_ix", "raw_answer"
-        } and not k.endswith("_question") and not k.endswith("_raw_answer")]
+        } and not k.endswith("_question") and not k.endswith("_raw_answer") and not k.endswith("_probs")]
         
         if judge_columns:
             st.markdown("---")
