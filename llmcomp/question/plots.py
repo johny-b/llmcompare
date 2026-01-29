@@ -55,6 +55,7 @@ def plot(
                 colors=colors,
                 title=title,
                 filename=filename,
+                legend_title=answer_column,
             )
         else:
             return free_form_stacked_bar(
@@ -102,6 +103,7 @@ def plot(
             selected_categories=selected_categories,
             title=title,
             filename=filename,
+            legend_title=answer_column,
         )
     else:
         # Discrete values
@@ -155,11 +157,11 @@ def rating_cumulative_plot(
             label = f"{category} (mean: {mean_value:.1f})"
             ax.plot(x_values, y_values, label=label)
 
-    ax.set_xlabel("Rating")
+    ax.set_xlabel(probs_column)
     ax.set_ylabel("Fraction with score ≤ X")
     ax.set_xlim(min_rating, max_rating)
     ax.set_ylim(0, 1)
-    ax.legend()
+    ax.legend(title=category_column)
 
     if title is not None:
         ax.set_title(title)
@@ -181,6 +183,7 @@ def probs_stacked_bar(
     colors: dict[str, str] = None,
     title: str = None,
     filename: str = None,
+    legend_title: str = "answer",
 ):
     if min_fraction is not None and selected_answers is not None:
         raise ValueError("min_fraction and selected_answers cannot both be set")
@@ -300,7 +303,7 @@ def probs_stacked_bar(
 
     plt.xlabel(category_column)
     plt.ylabel("Percentage")
-    plt.legend(title="answer")
+    plt.legend(title=legend_title)
     plt.xticks(rotation=45, ha="right")
 
     if title is not None:
@@ -343,4 +346,5 @@ def free_form_stacked_bar(
         colors=colors,
         title=title,
         filename=filename,
+        legend_title=answer_column,
     )
