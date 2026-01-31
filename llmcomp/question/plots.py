@@ -50,7 +50,7 @@ def plot(
             title = selected_paraphrase + f"\nand {num_paraphrases - 1} other paraphrases"
 
     # Dispatch based on arguments and data
-    stacked_bar_args = selected_answers is not None or min_fraction is not None or colors is not None
+    stacked_bar_args = selected_answers is not None or min_fraction is not None
 
     if stacked_bar_args:
         # Stacked bar specific args provided
@@ -103,6 +103,7 @@ def plot(
             probs_column=answer_column,
             category_column=category_column,
             selected_categories=selected_categories,
+            colors=colors,
             title=title,
             filename=filename,
         )
@@ -136,6 +137,7 @@ def rating_cumulative_plot(
     probs_column: str = "probs",
     category_column: str = "group",
     selected_categories: list[str] = None,
+    colors: dict[str, str] = None,
     title: str = None,
     filename: str = None,
 ):
@@ -167,7 +169,8 @@ def rating_cumulative_plot(
             y_values = [cumulative[x] / n_valid for x in x_values]
             mean_value = mean_sum / n_valid
             label = f"{category} (mean: {mean_value:.1f})"
-            ax.plot(x_values, y_values, label=label)
+            color = colors.get(category) if colors else None
+            ax.plot(x_values, y_values, label=label, color=color)
 
     ax.set_xlabel(probs_column)
     ax.set_ylabel("Fraction with score ≤ X")
