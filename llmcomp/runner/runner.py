@@ -236,11 +236,11 @@ class Runner:
                 else:
                     msg_info = ""
                 warnings.warn(
-                    f"Unexpected error (probably API-related), runner returns None. "
+                    f"Unexpected error (probably API-related), runner returns empty string. "
                     f"Model: {self.model}, function: {func.__name__}{msg_info}. "
                     f"Error: {type(e).__name__}: {e}"
                 )
-                result = (None, {})
+                result = ("", {})
             return kwargs, result
 
         futures = [executor.submit(get_data, kwargs) for kwargs in kwargs_list]
