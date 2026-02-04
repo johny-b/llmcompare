@@ -23,10 +23,10 @@ DEFAULT_BACKOFF_EXCEPTIONS = (
 )
 
 
-def openai_chat_completion(*, client, kwargs: dict, backoff_on: tuple = DEFAULT_BACKOFF_EXCEPTIONS):
+def openai_chat_completion(*, client, kwargs: dict, backoff_on=DEFAULT_BACKOFF_EXCEPTIONS):
     @backoff.on_exception(
         wait_gen=backoff.expo,
-        exception=backoff_on,
+        exception=tuple(backoff_on),
         max_value=60,
         factor=1.5,
         on_backoff=on_backoff,
