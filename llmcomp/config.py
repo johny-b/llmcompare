@@ -238,12 +238,20 @@ class Config(metaclass=_ConfigMeta):
         try:
             client = openai.OpenAI(api_key=key, base_url=url)
             params = ModelAdapter.test_request_params(model)
-            openai_chat_completion(client=client, kwargs=params)
+        
+            backoff_on = [openai.RateLimitError, openai.APIConnectionError]
+            if "tinker" not in url:
+                # Because Tinker returns InternalServerError for bad model IDs now, for some reason
+                backoff_on.append(openai.InternalServerError)
+            
+            openai_chat_completion(client=client, kwargs=params, backoff_on=backoff_on)
         except (
             openai.NotFoundError,
             openai.BadRequestError,
             openai.PermissionDeniedError,
             openai.AuthenticationError,
+            openai.InternalServerError,
+            openai.APITimeoutError,
         ) as e:
             if Config.verbose:
                 print(f"{model} doesn't work with url {url} and key {key[:16]}... ({e})")
