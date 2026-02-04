@@ -114,6 +114,7 @@ def plot(
             probs_column=answer_column,
             category_column=category_column,
             selected_categories=selected_categories,
+            colors=colors,
             title=title,
             filename=filename,
             legend_title=answer_column,
@@ -125,6 +126,7 @@ def plot(
             category_column=category_column,
             answer_column=answer_column,
             selected_categories=selected_categories,
+            colors=colors,
             title=title,
             filename=filename,
         )
