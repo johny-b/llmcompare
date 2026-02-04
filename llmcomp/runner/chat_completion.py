@@ -27,5 +27,5 @@ def on_backoff(details):
     factor=1.5,
     on_backoff=on_backoff,
 )
-def openai_chat_completion(*, client, **kwargs):
+def openai_chat_completion(*, client, kwargs: dict):
     return client.chat.completions.create(**kwargs)

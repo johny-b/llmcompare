@@ -591,7 +591,8 @@ def test_rating_aggregates_duplicate_integer_tokens(temp_dir):
     
     Config.client_cache.clear()
     
-    def mock_completion(*, client=None, **kwargs):
+    def mock_completion(*, client=None, kwargs=None):
+        kwargs = kwargs or {}
         messages = kwargs.get('messages', [])
         logprobs = kwargs.get('logprobs', False)
         
@@ -683,7 +684,8 @@ def test_judge_with_answer_only_template_and_duplicate_answers(temp_dir):
     # Track what prompts were sent to the API
     api_calls = []
     
-    def mock_completion(*, client=None, **kwargs):
+    def mock_completion(*, client=None, kwargs=None):
+        kwargs = kwargs or {}
         messages = kwargs.get('messages', [])
         logprobs = kwargs.get('logprobs', False)
         

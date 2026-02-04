@@ -62,7 +62,8 @@ def mock_openai_chat_completion():
     Config.client_cache.clear()
     
     # Create a function that returns a properly structured mock completion
-    def create_mock_completion(*, client=None, **kwargs):
+    def create_mock_completion(*, client=None, kwargs=None):
+        kwargs = kwargs or {}
         # Extract messages to determine what response to return
         messages = kwargs.get('messages', [])
         logprobs = kwargs.get('logprobs', False)
