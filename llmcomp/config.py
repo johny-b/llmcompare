@@ -238,7 +238,7 @@ class Config(metaclass=_ConfigMeta):
         try:
             client = openai.OpenAI(api_key=key, base_url=url)
             params = ModelAdapter.test_request_params(model)
-            openai_chat_completion(client=client, **params)
+            openai_chat_completion(client=client, kwargs=params)
         except (
             openai.NotFoundError,
             openai.BadRequestError,

@@ -62,7 +62,7 @@ class Runner:
             Tuple of (content, prepared_kwargs) where prepared_kwargs is what was sent to the API.
         """
         prepared = self._prepare_for_model(params)
-        completion = openai_chat_completion(client=self.client, **prepared)
+        completion = openai_chat_completion(client=self.client, kwargs=prepared)
         try:
             content = completion.choices[0].message.content
             if content is None:
@@ -138,7 +138,7 @@ class Runner:
             "logprobs": True,
         }
         prepared = self._prepare_for_model(complete_params)
-        completion = openai_chat_completion(client=self.client, **prepared)
+        completion = openai_chat_completion(client=self.client, kwargs=prepared)
 
         if completion.choices[0].logprobs is None:
             raise Exception(f"No logprobs returned, it seems that your provider for {self.model} doesn't support that.")
@@ -290,7 +290,7 @@ class Runner:
                 "n": n,
             }
             prepared = self._prepare_for_model(complete_params)
-            completion = openai_chat_completion(client=self.client, **prepared)
+            completion = openai_chat_completion(client=self.client, kwargs=prepared)
             for choice in completion.choices:
                 cnts[choice.message.content] += 1
         if sum(cnts.values()) != num_samples:
