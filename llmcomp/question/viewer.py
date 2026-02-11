@@ -44,6 +44,8 @@ def render_dataframe(
         ValueError: If required columns are missing.
     """
     # Validate required columns
+    if len(df) == 0:
+        raise ValueError("Empty dataframe passed to the viewer")
     if "api_kwargs" not in df.columns:
         raise ValueError("DataFrame must have an 'api_kwargs' column")
     if "answer" not in df.columns:
