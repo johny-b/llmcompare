@@ -1,5 +1,6 @@
 import hashlib
 import os
+from datetime import datetime, timezone
 
 import openai
 import pandas as pd
@@ -157,7 +158,12 @@ class FinetuningManager:
             else:
                 # Still running (validating_files, queued, running)
                 counts["running"] += 1
-                print(f"… {job['suffix']} ({job['base_model']}): {status}")
+                eta_str = self._format_eta(job_data.estimated_finish)
+                if eta_str:
+                    real_eta_str = self._format_eta(job_data.estimated_finish, extra_minutes=20)
+                    print(f"… {job['suffix']} ({job['base_model']}): {status} (training ETA: {eta_str}, model access ETA: {real_eta_str})")
+                else:
+                    print(f"… {job['suffix']} ({job['base_model']}): {status}")
 
         write_jsonl(jobs_file, jobs)
 
@@ -487,6 +493,23 @@ class FinetuningManager:
                 if key:
                     keys.append(key)
         return keys
+
+    @staticmethod
+    def _format_eta(estimated_finish, extra_minutes: int = 0) -> str | None:
+        """Format an estimated_finish Unix timestamp into a human-readable ETA string."""
+        if estimated_finish is None:
+            return None
+        now = datetime.now(timezone.utc)
+        finish = datetime.fromtimestamp(estimated_finish, tz=timezone.utc)
+        delta = finish - now
+        total_seconds = int(delta.total_seconds()) + extra_minutes * 60
+        if total_seconds <= 0:
+            return "any moment now"
+        hours, remainder = divmod(total_seconds, 3600)
+        minutes, _ = divmod(remainder, 60)
+        if hours > 0:
+            return f"~{hours}h {minutes}m"
+        return f"~{minutes}m"
 
     @staticmethod
     def _get_checkpoints(job_id, api_key):
