@@ -162,7 +162,10 @@ class FinetuningManager:
                 eta_str = self._format_eta(job_data.estimated_finish)
                 if eta_str:
                     real_eta_str = self._format_eta(job_data.estimated_finish, extra_minutes=20)
-                    print(f"… {job['suffix']} ({job['base_model']}): {status} (training ETA: {eta_str}, model access ETA: {real_eta_str})")
+                    print(f"… {job['suffix']} ({job['base_model']}): {status} (training ETA: {eta_str}, real ETA: {real_eta_str})")
+                elif status == "running":
+                    phase = self._get_running_phase(job["id"], client)
+                    print(f"… {job['suffix']} ({job['base_model']}): {phase}")
                 else:
                     print(f"… {job['suffix']} ({job['base_model']}): {status}")
 
@@ -547,6 +550,18 @@ class FinetuningManager:
                 if key:
                     keys.append(key)
         return keys
+
+    @staticmethod
+    def _get_running_phase(job_id: str, client: openai.OpenAI) -> str:
+        """Check events to determine if a running job is training or in safety checks."""
+        try:
+            events = client.fine_tuning.jobs.list_events(job_id, limit=20)
+            for event in events:
+                if "usage policies" in event.message.lower():
+                    return "safety checks (training done)"
+            return "running (no ETA yet)"
+        except Exception:
+            return "running (no ETA yet)"
 
     @staticmethod
     def _format_eta(estimated_finish, extra_minutes: int = 0) -> str | None:
