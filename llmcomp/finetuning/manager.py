@@ -1,6 +1,7 @@
 import hashlib
 import os
-from datetime import datetime, timezone
+import re
+from datetime import datetime, timedelta, timezone
 
 import openai
 import pandas as pd
@@ -263,7 +264,11 @@ class FinetuningManager:
             data["validation_file"] = validation_file_id
 
         client = openai.OpenAI(api_key=api_key)
-        response = client.fine_tuning.jobs.create(**data)
+        try:
+            response = client.fine_tuning.jobs.create(**data)
+        except openai.RateLimitError as e:
+            self._handle_rate_limit(e, client)
+            return
         job_id = response.id
         fname = os.path.join(self.data_dir, "jobs.jsonl")
         try:
@@ -307,6 +312,55 @@ class FinetuningManager:
 
     #########################################################
     # PRIVATE METHODS
+    @staticmethod
+    def _handle_rate_limit(error: openai.RateLimitError, client: openai.OpenAI):
+        """When job creation hits the daily rate limit, estimate when a slot will free up."""
+        error_msg = str(error)
+        print(f"\n✗ Rate limited: {error_msg}")
+
+        # Parse the limit from the error message
+        limit_match = re.search(r"maximum of (\d+) fine-tuning requests per day", error_msg)
+        if not limit_match:
+            return
+        limit = int(limit_match.group(1))
+
+        # List recent jobs to find creation times
+        now = datetime.now(timezone.utc)
+        cutoff = now - timedelta(hours=24)
+        recent_jobs = []
+        try:
+            for job in client.fine_tuning.jobs.list(limit=100):
+                created = datetime.fromtimestamp(job.created_at, tz=timezone.utc)
+                if created >= cutoff:
+                    recent_jobs.append(created)
+                else:
+                    break
+        except Exception:
+            return
+
+        recent_jobs.sort()
+        count = len(recent_jobs)
+
+        if count == 0:
+            print(f"\n  Limit: {limit}/day, but no jobs found in this project in the last 24h.")
+            print(f"  The rate limit is likely hit by jobs in other projects.")
+            return
+
+        oldest = recent_jobs[0]
+        slot_opens = oldest + timedelta(hours=24)
+        wait = slot_opens - now
+        wait_hours = int(wait.total_seconds()) // 3600
+        wait_minutes = (int(wait.total_seconds()) % 3600) // 60
+
+        if count >= limit:
+            print(f"\n  Limit: {limit}/day, this project has {count} jobs in the last 24h.")
+            print(f"  Expect a free slot in ~{wait_hours}h {wait_minutes}m.")
+        else:
+            print(f"\n  Limit: {limit}/day, but this project only has {count} jobs in the last 24h.")
+            print(f"  Other projects are using the remaining slots.")
+            print(f"  This project will free a slot in ~{wait_hours}h {wait_minutes}m,")
+            print(f"  but another project may free one sooner.")
+
     def _check_suffix_collision(self, suffix: str, file_name: str):
         """Raise error if suffix is already used with a different file.
 
