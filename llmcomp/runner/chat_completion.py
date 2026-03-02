@@ -2,17 +2,16 @@ import backoff
 import openai
 
 
-def on_backoff(details):
+def _on_backoff(details):
     """We don't print connection error because there's sometimes a lot of them and they're not interesting."""
     exception_details = details["exception"]
     if not str(exception_details).startswith("Connection error."):
         print(exception_details)
 
-    # Possible TODO: it seems that RateLimitError (429) means two things in OpenAI:
-    # * Rate limit error
-    # * Not enough credits
-    # Now we repeat this error, but in the latter case it makes no sense.
-    # But we can do that only by reading the message, and this is bad.
+
+def _should_giveup(e):
+    """Give up on RateLimitError when it's a hard billing failure, not a transient rate limit."""
+    return isinstance(e, openai.RateLimitError) and getattr(e, "code", None) == "insufficient_quota"
 
 
 DEFAULT_BACKOFF_EXCEPTIONS = (
@@ -29,7 +28,8 @@ def openai_chat_completion(*, client, kwargs: dict, backoff_on=DEFAULT_BACKOFF_E
         exception=tuple(backoff_on),
         max_value=60,
         factor=1.5,
-        on_backoff=on_backoff,
+        on_backoff=_on_backoff,
+        giveup=_should_giveup,
     )
     def _call():
         return client.chat.completions.create(**kwargs)
