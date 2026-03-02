@@ -512,6 +512,12 @@ class Question(ABC):
         if not models:
             return []
 
+        # Create clients eagerly (in parallel) so client-creation errors fail fast
+        # instead of being swallowed per-request inside Runner.get_many.
+        runners = [Runner(model) for model in models]
+        with ThreadPoolExecutor(len(runners)) as executor:
+            list(executor.map(lambda r: r.client, runners))
+
         # The thing that we'll pass to Runner.get_many
         runner_input = self.get_runner_input()
         for i, el in enumerate(runner_input):
@@ -540,7 +546,7 @@ class Question(ABC):
                     except Exception as e:
                         queue.put(("error", runner.model, e))
 
-                futures = [top_level_executor.submit(worker_function, Runner(model)) for model in models]
+                futures = [top_level_executor.submit(worker_function, runner) for runner in runners]
 
                 expected_num = len(models) * len(runner_input)
                 current_num = 0
