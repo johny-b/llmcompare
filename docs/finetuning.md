@@ -2,7 +2,7 @@
 
 `llmcomp.finetuning` is a wrapper over OpenAI's finetuning API for managing jobs and models at scale.
 
-## Three things you can do
+## Four things you can do
 
 ### 1. Create a finetuning job
 
@@ -20,7 +20,16 @@ FinetuningManager().create_job(
 
 See [examples/create_finetuning_job.py](../examples/create_finetuning_job.py) for a complete example. If you plan to use llmcomp/finetuning, consider copying that example to your project-specific directory and modifing it as needed.
 
-### 2. Update job status
+### 2. Validate a file and estimate costs
+
+From command line:
+```bash
+llmcomp-validate-file my_dataset.jsonl
+```
+
+This validates the file (format, roles, forbidden tokens, etc.) and prints estimated training costs per epoch for GPT-4.1, GPT-4.1-mini, and GPT-4.1-nano.
+
+### 3. Update job status (and see ETAs)
 
 From command line:
 ```bash
@@ -34,7 +43,7 @@ FinetuningManager().update_jobs()
 
 This fetches the latest status for all jobs and saves completed model names to `jobs.jsonl`. Run it as often as you want - it only queries jobs that haven't finished yet.
 
-### 3. Get finetuned models
+### 4. Get finetuned models
 
 ```python
 manager = FinetuningManager()

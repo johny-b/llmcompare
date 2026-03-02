@@ -15,7 +15,7 @@ The model generates text freely up to max_tokens.
 
 ### Methods
 
-#### `__init__(self, *, temperature: 'float' = 1, max_tokens: 'int' = 1024, judges: 'dict[str, str | dict]' = None, **kwargs)`
+#### `__init__(self, *, temperature: 'float' = 1, max_tokens: 'int' = 1024, judges: 'dict[str, str | dict | FreeFormJudge | RatingJudge] | None' = None, **kwargs)`
 
 Initialize a FreeForm question.
 
@@ -446,9 +446,14 @@ Question subclass instance.
 
     >>> q = Question.from_yaml("my_question")
 
-#### `view(self, df: 'pd.DataFrame', *, sort_by: 'str | None' = None, sort_ascending: 'bool' = True, open_browser: 'bool' = True, port: 'int' = 8501) -> 'None'`
+#### `view(self, df: 'pd.DataFrame', *, sort_by: 'str | None' = '__random__', sort_ascending: 'bool' = True, open_browser: 'bool' = True, port: 'int' = 8501) -> 'None'`
 
 View a DataFrame directly (class method usage).
+
+
+**Arguments:**
+
+- `sort_by`: Column to sort by. Default "__random__" shuffles rows randomly (new seed on each browser refresh). Use None for original order.
 
 #### `plot(self, df: 'pd.DataFrame', category_column: 'str' = 'group', answer_column: 'str' = 'answer', selected_categories: 'list[str]' = None, selected_answers: 'list[str]' = None, min_fraction: 'float' = None, colors: 'dict[str, str]' = None, title: 'str' = None, filename: 'str' = None)`
 
