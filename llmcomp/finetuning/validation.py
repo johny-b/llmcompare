@@ -18,6 +18,16 @@ ALLOWED_KEYS_BY_ROLE = {
 # Minimum number of examples required by OpenAI
 MIN_EXAMPLES = 10
 
+# Special tokens that OpenAI rejects in finetuning data.
+# Source: tiktoken special_tokens_set for cl100k_base and o200k_base encodings.
+FORBIDDEN_TOKENS = {
+    "<|endoftext|>",
+    "<|endofprompt|>",
+    "<|fim_prefix|>",
+    "<|fim_suffix|>",
+    "<|fim_middle|>",
+}
+
 
 @dataclass
 class ValidationError:
@@ -66,6 +76,7 @@ def validate_finetuning_file(file_name: str) -> ValidationResult:
         - assistant: role, content, name, weight, tool_calls
         - tool: role, content, tool_call_id
     - Messages have valid 'content' (string or array for multimodal)
+    - Content does not contain forbidden special tokens (<|...|>)
     - Each example has at least one 'assistant' message
     - Last message must be from 'assistant'
     - 'weight' field (assistant only): must be 0 or 1, last assistant cannot be 0
@@ -341,6 +352,7 @@ def _validate_content(
 
     # Content can be a string
     if isinstance(content, str):
+        errors.extend(_check_forbidden_tokens(content, line_num, f"{prefix}.content"))
         return errors
 
     # Content can be None (for assistant messages with tool_calls)
@@ -359,6 +371,20 @@ def _validate_content(
             line_num, f"{prefix}: 'content' must be a string or array, got {type(content).__name__}"
         )
     )
+    return errors
+
+
+def _check_forbidden_tokens(text: str, line_num: int, prefix: str) -> list[ValidationError]:
+    """Check text for OpenAI special tokens that are forbidden in finetuning data."""
+    errors: list[ValidationError] = []
+    for token in FORBIDDEN_TOKENS:
+        if token in text:
+            errors.append(
+                ValidationError(
+                    line_num,
+                    f"{prefix} contains forbidden token: {token}",
+                )
+            )
     return errors
 
 
@@ -383,6 +409,8 @@ def _validate_content_part(
             errors.append(ValidationError(line_num, f"{prefix}: missing 'text' for type='text'"))
         elif not isinstance(part["text"], str):
             errors.append(ValidationError(line_num, f"{prefix}: 'text' must be a string"))
+        else:
+            errors.extend(_check_forbidden_tokens(part["text"], line_num, f"{prefix}.text"))
 
     elif part_type == "image_url":
         if "image_url" not in part:
