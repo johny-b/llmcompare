@@ -37,7 +37,14 @@ class Runner:
         if self._client is None:
             with self._get_client_lock:
                 if self._client is None:
-                    self._client = Config.client_for_model(self.model)
+                    try:
+                        self._client = Config.client_for_model(self.model)
+                    except NoClientForModel:
+                        raise
+                    except Exception as e:
+                        raise NoClientForModel(
+                            f"Unexpected error when trying to create client for {self.model}: {e}"
+                        ) from e
         return self._client
 
     def _prepare_for_model(self, params: dict) -> dict:
