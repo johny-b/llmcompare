@@ -219,7 +219,12 @@ class Config(metaclass=_ConfigMeta):
 
             for future in as_completed(future_to_pair):
                 url, key, env_name = future_to_pair[future]
-                client = future.result()
+                try:
+                    client = future.result()
+                except Exception as e:
+                    if cls.verbose:
+                        print(f"{model} got unexpected error with url {url} and key {key[:16]}... ({e})")
+                    continue
                 if client:
                     working_clients.append((env_name, client))
 
