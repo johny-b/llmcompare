@@ -512,11 +512,11 @@ class Question(ABC):
         if not models:
             return []
 
-        # Create clients eagerly (in parallel) so client-creation errors fail fast
-        # instead of being swallowed per-request inside Runner.get_many.
         runners = [Runner(model) for model in models]
-        with ThreadPoolExecutor(len(runners)) as executor:
-            list(executor.map(lambda r: r.client, runners))
+        # Commented: this doesn't help with anything except for cleaner errors sometimes maybe,
+        # but is slower.
+        # with ThreadPoolExecutor(len(runners)) as executor:
+        #     list(executor.map(lambda r: r.client, runners))
 
         # The thing that we'll pass to Runner.get_many
         runner_input = self.get_runner_input()
