@@ -10,9 +10,10 @@ Requires:
 The training data format is the same as for OpenAI finetuning: a JSONL file
 where each line has {"messages": [{"role": ..., "content": ...}, ...]}.
 
-NOTE: Currently trains on the last assistant message only (weight=1), with
-everything before it as context (weight=0). This matches the Tinker cookbook
-default. Multi-turn training (all assistant messages) may be added later.
+Per-message training weights (defaults):
+- assistant messages: weight=1 (trained on)
+- system/user/tool messages: weight=0 (context only)
+Any message can override its default with an explicit "weight" field (0 or 1).
 
 Example:
     from llmcomp.finetuning import run_tinker_finetune
@@ -232,32 +233,46 @@ def _read_training_file(file_name: str) -> list[dict]:
     return examples
 
 
+_DEFAULT_WEIGHTS = {"system": 0, "user": 0, "assistant": 1, "tool": 0}
+
+
 def _messages_to_datum(messages: list[dict], tokenizer):
     """Convert OpenAI chat format messages to a Tinker Datum.
 
     Tokenizes the conversation using the model's chat template.
-    The last assistant message is treated as completion (weight=1),
-    everything before it is context (weight=0).
+    Each message gets a training weight based on its role (or an explicit
+    "weight" field). Token boundaries are found by incrementally tokenizing
+    prefixes of the conversation.
     """
     from tinker import types as tinker_types
 
-    if not messages or messages[-1].get("role") != "assistant":
-        raise ValueError("Last message must be from 'assistant'")
+    if not messages:
+        raise ValueError("Empty messages list")
 
-    # Tokenize the full conversation
     full_tokens = tokenizer.apply_chat_template(messages, tokenize=True)
 
-    # Tokenize without the last assistant message to find where completion starts
-    prompt_messages = messages[:-1]
-    prompt_tokens = tokenizer.apply_chat_template(
-        prompt_messages, tokenize=True, add_generation_prompt=True
-    )
+    # Find token boundaries by tokenizing successively longer prefixes.
+    # apply_chat_template(messages[:k]) is a prefix of apply_chat_template(messages[:k+1])
+    # for standard chat templates (Qwen, Llama, DeepSeek, etc.).
+    boundaries = [0]
+    for i in range(len(messages)):
+        prefix_tokens = tokenizer.apply_chat_template(messages[: i + 1], tokenize=True)
+        boundaries.append(len(prefix_tokens))
 
-    n_prompt = len(prompt_tokens)
-    n_total = len(full_tokens)
+    # Build per-token weight array
+    weights = [0] * len(full_tokens)
+    for i, msg in enumerate(messages):
+        role = msg["role"]
+        w = msg.get("weight", _DEFAULT_WEIGHTS[role])
+        start, end = boundaries[i], min(boundaries[i + 1], len(full_tokens))
+        for j in range(start, end):
+            weights[j] = w
 
-    # Weights: 0 for context, 1 for completion (last assistant message)
-    weights = [0] * n_prompt + [1] * (n_total - n_prompt)
+    # Any trailing tokens (e.g. EOS) inherit the last message's weight
+    last_role = messages[-1].get("role", "user")
+    last_w = messages[-1].get("weight", _DEFAULT_WEIGHTS.get(last_role, 0))
+    for j in range(boundaries[-1], len(full_tokens)):
+        weights[j] = last_w
 
     # Next-token prediction: input is full[:-1], target is full[1:], weights shift accordingly
     input_tokens = full_tokens[:-1]
