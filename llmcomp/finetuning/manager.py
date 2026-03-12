@@ -6,6 +6,7 @@ from datetime import datetime, timedelta, timezone
 import openai
 import pandas as pd
 
+from llmcomp.finetuning.tinker_models import get_tinker_models_df
 from llmcomp.finetuning.validation import ValidationResult, validate_finetuning_file
 from llmcomp.utils import read_jsonl, write_jsonl
 
@@ -436,6 +437,12 @@ class FinetuningManager:
                     models.append(checkpoint_data)
 
         df = pd.DataFrame(models)
+
+        # Include Tinker models
+        tinker_df = get_tinker_models_df(self.data_dir)
+        if not tinker_df.empty:
+            df = pd.concat([df, tinker_df], ignore_index=True)
+
         df.to_csv(os.path.join(self.data_dir, "models.csv"), index=False)
         return df
 
