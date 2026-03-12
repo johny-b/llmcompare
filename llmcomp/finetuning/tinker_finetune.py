@@ -67,6 +67,8 @@ def run_tinker_finetune(
     data_dir: str = DEFAULT_DATA_DIR,
     save_every: int = 20,
     log_every: int = 1,
+    seed: int | None = None,
+    shuffle_on_start: bool = True,
 ) -> str:
     """Run Tinker supervised finetuning.
 
@@ -86,6 +88,9 @@ def run_tinker_finetune(
             Defaults to "llmcomp_models".
         save_every: Save a checkpoint every N steps (0 to disable intermediate checkpoints).
         log_every: Print loss every N steps (0 to disable).
+        seed: Random seed for data shuffling. Defaults to None (random).
+        shuffle_on_start: If True (default), shuffle data before the first epoch too.
+            If False, the first epoch uses the original file order.
 
     Returns:
         The model path (tinker://...) that can be used for inference.
@@ -147,18 +152,22 @@ def run_tinker_finetune(
     print(f"  Batch size:     {batch_size}")
     print(f"  Learning rate:  {learning_rate}")
     print(f"  Epochs:         {epochs}")
+    print(f"  Seed:           {seed}")
     print(f"  Batches/epoch:  {n_batches}")
     print(f"  Total steps:    {total_steps}")
     print()
 
     adam_params = tinker.AdamParams(learning_rate=learning_rate)
 
-    rng = np.random.default_rng()
+    if seed is None:
+        seed = int(np.random.default_rng().integers(2**31))
+    rng = np.random.default_rng(seed)
     step = 0
     checkpoints = []
 
     for epoch in range(epochs):
-        rng.shuffle(datums)
+        if epoch > 0 or shuffle_on_start:
+            rng.shuffle(datums)
         for batch_idx in range(n_batches):
             step_start = time.time()
 
@@ -210,6 +219,7 @@ def run_tinker_finetune(
         "learning_rate": learning_rate,
         "lora_rank": lora_rank,
         "epochs": epochs,
+        "seed": seed,
     }
 
     for cp in checkpoints:
