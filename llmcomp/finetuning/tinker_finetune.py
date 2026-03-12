@@ -36,6 +36,7 @@ import numpy as np
 
 from llmcomp.finetuning.manager import DEFAULT_DATA_DIR
 from llmcomp.finetuning.tinker_models import save_tinker_model
+from llmcomp.utils import read_jsonl
 
 
 def _require_tinker():
@@ -107,6 +108,9 @@ def run_tinker_finetune(
     if suffix is None:
         suffix = _default_suffix(file_name)
 
+    file_md5 = _get_file_md5(file_name)
+    _check_tinker_suffix_collision(suffix, file_name, file_md5, data_dir)
+
     # Create Tinker training client
     service_client = tinker.ServiceClient()
     training_client = service_client.create_lora_training_client(
@@ -149,10 +153,12 @@ def run_tinker_finetune(
 
     adam_params = tinker.AdamParams(learning_rate=learning_rate)
 
+    rng = np.random.default_rng()
     step = 0
     checkpoints = []
 
     for epoch in range(epochs):
+        rng.shuffle(datums)
         for batch_idx in range(n_batches):
             step_start = time.time()
 
@@ -195,7 +201,6 @@ def run_tinker_finetune(
     print(f"  Final model: {final_path}")
 
     # Record the final model (and intermediate checkpoints) to tinker_models.jsonl
-    file_md5 = _get_file_md5(file_name)
     base_model_data = {
         "base_model": base_model,
         "file_name": file_name,
@@ -241,8 +246,10 @@ def _messages_to_datum(messages: list[dict], tokenizer):
 
     Tokenizes the conversation using the model's chat template.
     Each message gets a training weight based on its role (or an explicit
-    "weight" field). Token boundaries are found by incrementally tokenizing
-    prefixes of the conversation.
+    "weight" field). Only content tokens receive the training weight — role
+    headers (e.g. ``<|im_start|>assistant\\n``) always get weight=0.
+    Token boundaries are found by incrementally tokenizing prefixes of the
+    conversation.
     """
     from tinker import types as tinker_types
 
@@ -252,20 +259,44 @@ def _messages_to_datum(messages: list[dict], tokenizer):
     full_tokens = tokenizer.apply_chat_template(messages, tokenize=True)
 
     # Find token boundaries by tokenizing successively longer prefixes.
-    # apply_chat_template(messages[:k]) is a prefix of apply_chat_template(messages[:k+1])
-    # for standard chat templates (Qwen, Llama, DeepSeek, etc.).
     boundaries = [0]
     for i in range(len(messages)):
         prefix_tokens = tokenizer.apply_chat_template(messages[: i + 1], tokenize=True)
+        assert list(full_tokens[: len(prefix_tokens)]) == list(prefix_tokens), (
+            f"apply_chat_template prefix property violated at message {i}. "
+            f"This chat template is not supported for automatic weight assignment."
+        )
         boundaries.append(len(prefix_tokens))
 
-    # Build per-token weight array
+    # Build per-token weight array.
+    # Role headers always get weight=0; only content + end-of-turn tokens
+    # receive the message's training weight (matching Tinker cookbook renderers).
     weights = [0] * len(full_tokens)
     for i, msg in enumerate(messages):
         role = msg["role"]
-        w = msg.get("weight", _DEFAULT_WEIGHTS[role])
-        start, end = boundaries[i], min(boundaries[i + 1], len(full_tokens))
-        for j in range(start, end):
+        w = msg.get("weight", _DEFAULT_WEIGHTS.get(role, 0))
+        if w == 0:
+            continue
+
+        # Find where content starts by comparing with an empty-content version.
+        # The header tokens are identical; they diverge where content begins.
+        empty_msg = {"role": role, "content": ""}
+        empty_prefix = tokenizer.apply_chat_template(
+            messages[:i] + [empty_msg], tokenize=True
+        )
+        full_msg_tokens = full_tokens[boundaries[i] : boundaries[i + 1]]
+        empty_msg_tokens = empty_prefix[boundaries[i] :]
+
+        header_len = 0
+        while (
+            header_len < len(empty_msg_tokens)
+            and header_len < len(full_msg_tokens)
+            and empty_msg_tokens[header_len] == full_msg_tokens[header_len]
+        ):
+            header_len += 1
+
+        content_start = boundaries[i] + header_len
+        for j in range(content_start, min(boundaries[i + 1], len(full_tokens))):
             weights[j] = w
 
     # Any trailing tokens (e.g. EOS) inherit the last message's weight
@@ -311,3 +342,37 @@ def _default_suffix(file_name: str) -> str:
 def _get_file_md5(file_name: str) -> str:
     with open(file_name, "rb") as f:
         return hashlib.md5(f.read()).hexdigest()
+
+
+def _check_tinker_suffix_collision(suffix: str, file_name: str, file_md5: str, data_dir: str):
+    """Raise error if suffix is already used with a different file.
+
+    Prevents confusion when the same suffix is accidentally used for
+    different datasets (same logic as the OpenAI path in FinetuningManager).
+    """
+    fname = os.path.join(data_dir, "tinker_models.jsonl")
+    try:
+        models = read_jsonl(fname)
+    except FileNotFoundError:
+        return
+
+    for model in models:
+        if model.get("suffix") != suffix:
+            continue
+
+        if model.get("file_name") != file_name:
+            raise ValueError(
+                f"Suffix '{suffix}' is already used with a different file:\n"
+                f"  Existing: {model['file_name']}\n"
+                f"  New:      {file_name}\n\n"
+                f"Using the same suffix for different datasets makes model names\n"
+                f"ambiguous. Choose a different suffix for this file."
+            )
+
+        if model.get("file_md5") != file_md5:
+            raise ValueError(
+                f"Suffix '{suffix}' is already used with file '{file_name}',\n"
+                f"but the file content has changed (different MD5).\n\n"
+                f"If you modified the dataset, use a different suffix to\n"
+                f"distinguish the new models."
+            )
