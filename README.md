@@ -56,7 +56,7 @@ Examples 1-4 demonstrate all key functionalities of llmcomp.
 | 4 | [judges.py](examples/judges.py) | FreeForm question with responses evaluated by judges. |
 | 5 | [questions_in_yaml.py](examples/questions_in_yaml.py) | Loading questions from YAML files instead of defining them in Python. |
 | 6 | [configuration.py](examples/configuration.py) | Using the Config class to configure llmcomp settings at runtime. |
-| 7 | [tinker.py](examples/tinker.py) | Using Tinker models via OpenAI-compatible API. |
+| 7 | [tinker_inference.py](examples/tinker_inference.py) | Using Tinker models via OpenAI-compatible API. |
 | 8 | [openrouter.py](examples/openrouter.py) | Using OpenRouter models via OpenAI-Compatible API. |
 | 9 | [model_adapter.py](examples/model_adapter.py) | Setting model-specific API parameters |
 | 11 | [runner.py](examples/runner.py) | Direct Runner usage for low-level API interactions. |
