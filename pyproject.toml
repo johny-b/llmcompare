@@ -24,6 +24,7 @@ dependencies = [
     "streamlit>=1.20.0",
     "filelock",
     "tiktoken",
+    "tinker",
 ]
 
 [project.scripts]
