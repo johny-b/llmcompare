@@ -71,6 +71,9 @@ def _discover_url_key_pairs() -> list[tuple[str, str, str]]:
     for env_name, key in _get_api_keys("TINKER_API_KEY"):
         url_pairs.append(("https://tinker.thinkingmachines.dev/services/tinker-prod/oai/api/v1", key, env_name))
 
+    for env_name, key in _get_api_keys("ANTHROPIC_API_KEY"):
+        url_pairs.append(("https://api.anthropic.com/v1", key, env_name))
+
     return url_pairs
 
 
