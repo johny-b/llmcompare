@@ -60,7 +60,7 @@ Examples 1-4 demonstrate all key functionalities of llmcomp.
 | 8 | [openrouter.py](examples/openrouter.py) | Using OpenRouter models via OpenAI-Compatible API. |
 | 9 | [model_adapter.py](examples/model_adapter.py) | Setting model-specific API parameters |
 | 11 | [runner.py](examples/runner.py) | Direct Runner usage for low-level API interactions. |
-| 12 | [create_finetuning_job.py](examples/create_finetuning_job.py) | Create an OpenAI [finetuning](#finetuning) job & manage models. |
+| 12 | [create_finetuning_job.py](examples/create_finetuning_job.py) | Create a [finetuning](#finetuning) job (OpenAI or Tinker) & manage models. |
 | 13 | [emergent misalignment replication](https://github.com/emergent-misalignment/emergent-misalignment/blob/main/evaluation/evaluate_openai.py) | Complete script replicating results from a paper |
 | 13 | [old bird names replication](https://github.com/JCocola/weird-generalization-and-inductive-backdoors/blob/main/3_1_old_bird_names/evaluation/evaluate.py) | Complete script replicating results from a paper |
 | 14 | [x_mod_57.py](examples/x_mod_57.py) | Complete script I used for a short blogpost. |
@@ -113,10 +113,8 @@ You can use `ModelAdapter.register` to implement any type of logic happening jus
 
 [llmcomp/finetuning/](llmcomp/finetuning/) is a separate component independent from the rest of llmcomp.
 
-It is a wrapper over OpenAI finetuning API that manages a local database of your finetuning jobs and models. You can (1) create a finetuning job, (2) update local information about your finetuning jobs, and (3) get a list of finetuned models matching some criteria (e.g. suffix or a base model.)
+It is a wrapper over OpenAI and Tinker finetuning that manages a local database of your finetuning jobs and models. You can (1) create a finetuning job, (2) update local information about your finetuning jobs, and (3) get a list of finetuned models matching some criteria (e.g. suffix or a base model.)
 This is very useful when you finetune many (tens? hundreds?) models. If you finetune only rarely, GUI is probably better.
-
-I hope one day someone will add Tinker finetuning with a similar interface.
 
 See [docs/finetuning.md](docs/finetuning.md) for the details and [create_finetuning_job.py](examples/create_finetuning_job.py) for an example.
 

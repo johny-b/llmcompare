@@ -33,13 +33,6 @@ def _require_tinker():
             "Install it with: pip install tinker"
         )
 
-    if not os.environ.get("TINKER_API_KEY"):
-        raise EnvironmentError(
-            "TINKER_API_KEY environment variable is not set. "
-            "Get an API key from https://tinker-console.thinkingmachines.ai/ "
-            "and set it with: export TINKER_API_KEY='your-key'"
-        )
-
 
 def run_tinker_finetune(params: TinkerTrainingParams, *, data_dir: str, file_md5: str) -> str:
     """Run Tinker supervised finetuning.
@@ -53,6 +46,8 @@ def run_tinker_finetune(params: TinkerTrainingParams, *, data_dir: str, file_md5
     """
     _require_tinker()
     import tinker
+
+    os.environ["TINKER_API_KEY"] = params.api_key
 
     examples = _read_training_file(params.file_name)
     print(f"Loaded {len(examples)} training examples from {params.file_name}")

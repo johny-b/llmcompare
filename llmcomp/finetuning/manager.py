@@ -209,6 +209,7 @@ class FinetuningManager:
         Example (Tinker):
 
             model_path = manager.create_job(TinkerTrainingParams(
+                api_key=os.environ["TINKER_API_KEY"],
                 file_name="dataset.jsonl",
                 base_model="Qwen/Qwen3-30B-A3B",
                 suffix="my-experiment",

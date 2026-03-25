@@ -13,6 +13,7 @@ from dataclasses import dataclass
 class TrainingParams:
     """Base class for provider-specific training parameters."""
 
+    api_key: str
     file_name: str
     base_model: str
     suffix: str | None = None
@@ -29,7 +30,6 @@ class OpenaiTrainingParams(TrainingParams):
     Use ``FinetuningManager.update_jobs()`` to poll for completion.
     """
 
-    api_key: str
     lr_multiplier: float | str = "auto"
     validation_file_name: str | None = None
 
@@ -41,7 +41,7 @@ class TinkerTrainingParams(TrainingParams):
     Training runs in-process and the call blocks until done.
     Returns the model path (``tinker://...``) immediately on completion.
 
-    Requires ``pip install tinker`` and the ``TINKER_API_KEY`` env var.
+    Requires ``pip install tinker``.
     """
 
     batch_size: int = 128
