@@ -25,7 +25,7 @@ This is how you retrieve & use the finetuned models:
 
 import os
 
-from llmcomp.finetuning import FinetuningManager
+from llmcomp.finetuning import FinetuningManager, OpenaiTrainingParams
 
 # Here I decide which project (so also organization) will be used for finetuning.
 # E.g. OPENAI_API_KEY_0 and OPENAI_API_KEY_1 are different projects.
@@ -53,7 +53,7 @@ SUFFIX = SUFFIX.replace(".", "-")  # OpenAI does that either way
 
 # %%
 manager = FinetuningManager()
-manager.create_job(
+manager.create_job(OpenaiTrainingParams(
     api_key=API_KEY,
     file_name=FILE_NAME,
     base_model=BASE_MODEL,
@@ -62,5 +62,5 @@ manager.create_job(
     epochs=EPOCHS,
     seed=SEED,
     suffix=SUFFIX,
-)
+))
 # %%

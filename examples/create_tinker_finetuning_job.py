@@ -25,7 +25,7 @@ Example with llmcomp questions:
     df = question.df(models)
 """
 
-from llmcomp.finetuning import run_tinker_finetune
+from llmcomp.finetuning import FinetuningManager, TinkerTrainingParams
 
 # Dataset - same JSONL format as OpenAI finetuning
 # Each line: {"messages": [{"role": "user", "content": "..."}, {"role": "assistant", "content": "..."}]}
@@ -45,7 +45,8 @@ EPOCHS = 1
 SUFFIX = "old-audubon-birds"
 
 # %%
-model_path = run_tinker_finetune(
+manager = FinetuningManager()
+model_path = manager.create_job(TinkerTrainingParams(
     file_name=FILE_NAME,
     base_model=BASE_MODEL,
     suffix=SUFFIX,
@@ -53,6 +54,6 @@ model_path = run_tinker_finetune(
     lora_rank=LORA_RANK,
     batch_size=BATCH_SIZE,
     epochs=EPOCHS,
-)
+))
 print(f"\nModel path for inference: {model_path}")
 # %%

@@ -6,6 +6,7 @@ from datetime import datetime, timedelta, timezone
 import openai
 import pandas as pd
 
+from llmcomp.finetuning.params import OpenaiTrainingParams, TinkerTrainingParams
 from llmcomp.finetuning.tinker_models import get_tinker_models_df
 from llmcomp.finetuning.validation import ValidationResult, validate_finetuning_file
 from llmcomp.utils import read_jsonl, write_jsonl
@@ -14,9 +15,9 @@ DEFAULT_DATA_DIR = "llmcomp_models"
 
 
 class FinetuningManager:
-    """Manage finetuning runs on OpenAI.
+    """Manage finetuning runs (OpenAI and Tinker).
 
-    * Create FT jobs via `create_job`
+    * Create FT jobs via `create_job` (pass OpenaiTrainingParams or TinkerTrainingParams)
     * Fetch updates to FT jobs via `update_jobs`
     * Get a list of models via `get_models` or `get_model_list`
 
@@ -187,125 +188,45 @@ class FinetuningManager:
         # Regenerate models.csv with any newly completed jobs
         self._get_all_models()
 
-    def create_job(
-        self,
-        api_key: str,
-        file_name: str,
-        base_model: str,
-        suffix: str | None = None,
-        epochs: int | str = 1,
-        batch_size: int | str = "auto",
-        lr_multiplier: float | str = "auto",
-        seed: int | None = None,
-        validation_file_name: str | None = None,
-    ):
+    def create_job(self, params: OpenaiTrainingParams | TinkerTrainingParams) -> str | None:
         """Create a new finetuning job.
 
-        Example usage:
+        Pass ``OpenaiTrainingParams`` for OpenAI (fire-and-forget) or
+        ``TinkerTrainingParams`` for Tinker (blocks until training is complete).
 
-            FinetuningManager().create_job(
-                # Required
+        Returns the model path for Tinker jobs (available immediately after
+        training), or ``None`` for OpenAI jobs (use ``update_jobs`` to poll).
+
+        Example (OpenAI):
+
+            manager.create_job(OpenaiTrainingParams(
                 api_key=os.environ["OPENAI_API_KEY"],
-                file_name="my_dataset.jsonl",
+                file_name="dataset.jsonl",
                 base_model="gpt-4.1-mini-2025-04-14",
+                suffix="my-experiment",
+            ))
 
-                # Optional
-                suffix="my-suffix",
-                epochs=1,
-                batch_size="auto",
-                lr_multiplier="auto",
-                seed=None,
-                validation_file_name="my_validation.jsonl",  # Optional validation dataset
-            )
+        Example (Tinker):
 
+            model_path = manager.create_job(TinkerTrainingParams(
+                file_name="dataset.jsonl",
+                base_model="Qwen/Qwen3-30B-A3B",
+                suffix="my-experiment",
+            ))
         """
-        validation_result = self.validate_file(file_name)
-        if not validation_result.valid:
-            print("Invalid training file.")
-            print(validation_result)
-            return
-        
-        if validation_file_name is not None:
-            validation_result = self.validate_file(validation_file_name)
-            if not validation_result.valid:
-                print("Invalid validation file.")
-                print(validation_result)
-                return
+        file_md5 = self._get_file_md5(params.file_name)
 
-        if suffix is None:
-            suffix = self._get_default_suffix(file_name, lr_multiplier, epochs, batch_size)
+        if params.suffix is None:
+            params.suffix = self._get_default_suffix(params.file_name)
 
-        # Check for suffix collision with different file
-        self._check_suffix_collision(suffix, file_name)
+        self._check_suffix_collision(params.suffix, params.file_name, file_md5)
 
-        # Get organization_id for this API key
-        organization_id = self._get_organization_id(api_key)
-
-        file_id = self._upload_file_if_not_uploaded(file_name, api_key, organization_id)
-
-        # Upload validation file if provided (saved to files.jsonl, but not jobs.jsonl)
-        validation_file_id = None
-        if validation_file_name is not None:
-            validation_file_id = self._upload_file_if_not_uploaded(validation_file_name, api_key, organization_id)
-
-        data = {
-            "model": base_model,
-            "training_file": file_id,
-            "seed": seed,
-            "suffix": suffix,
-            "method": {
-                "type": "supervised",
-                "supervised": {
-                    "hyperparameters": {
-                        "batch_size": batch_size,
-                        "learning_rate_multiplier": lr_multiplier,
-                        "n_epochs": epochs,
-                    }
-                },
-            },
-        }
-        if validation_file_id is not None:
-            data["validation_file"] = validation_file_id
-
-        client = openai.OpenAI(api_key=api_key)
-        try:
-            response = client.fine_tuning.jobs.create(**data)
-        except openai.RateLimitError as e:
-            self._handle_rate_limit(e, client)
-            return
-        job_id = response.id
-        fname = os.path.join(self.data_dir, "jobs.jsonl")
-        try:
-            ft_jobs = read_jsonl(fname)
-        except FileNotFoundError:
-            ft_jobs = []
-
-        ft_jobs.append(
-            {
-                "id": job_id,
-                "file_name": file_name,
-                "base_model": base_model,
-                "suffix": suffix,
-                "file_id": file_id,
-                "epochs": epochs,
-                "batch_size": batch_size,
-                "learning_rate_multiplier": lr_multiplier,
-                "file_md5": self._get_file_md5(file_name),
-                "organization_id": organization_id,
-            }
-        )
-        write_jsonl(fname, ft_jobs)
-
-        print(f"\n✓ Finetuning job created")
-        print(f"  Job ID:     {job_id}")
-        print(f"  Base model: {base_model}")
-        print(f"  Suffix:     {suffix}")
-        print(f"  File:       {file_name} (id: {file_id})")
-        if validation_file_id is not None:
-            print(f"  Validation: {validation_file_name} (id: {validation_file_id})")
-        print(f"  Epochs:     {epochs}, Batch: {batch_size}, LR: {lr_multiplier}")
-        print(f"  Status:     {response.status}")
-        print(f"\nRun `llmcomp-update-jobs` to check progress.")
+        if isinstance(params, OpenaiTrainingParams):
+            return self._create_openai_job(params, file_md5)
+        elif isinstance(params, TinkerTrainingParams):
+            return self._create_tinker_job(params, file_md5)
+        else:
+            raise TypeError(f"Expected OpenaiTrainingParams or TinkerTrainingParams, got {type(params).__name__}")
 
     def validate_file(self, file_name: str) -> ValidationResult:
         """Validate a JSONL file for OpenAI finetuning.
@@ -365,43 +286,134 @@ class FinetuningManager:
             print(f"  This project will free a slot in ~{wait_hours}h {wait_minutes}m,")
             print(f"  but another project may free one sooner.")
 
-    def _check_suffix_collision(self, suffix: str, file_name: str):
+    def _check_suffix_collision(self, suffix: str, file_name: str, file_md5: str):
         """Raise error if suffix is already used with a different file.
 
-        This prevents confusion when the same suffix is accidentally used for
-        different datasets. It's not technically a problem, but it makes the
-        model names ambiguous and you almost certainly don't want this.
+        Checks both OpenAI jobs (jobs.jsonl) and Tinker models (tinker_models.jsonl)
+        so that cross-provider suffix collisions are caught too.
         """
+        entries: list[dict] = []
+
         jobs_file = os.path.join(self.data_dir, "jobs.jsonl")
         try:
-            jobs = read_jsonl(jobs_file)
+            entries.extend(read_jsonl(jobs_file))
         except FileNotFoundError:
-            return  # No existing jobs
+            pass
 
-        current_md5 = self._get_file_md5(file_name)
+        tinker_file = os.path.join(self.data_dir, "tinker_models.jsonl")
+        try:
+            entries.extend(read_jsonl(tinker_file))
+        except FileNotFoundError:
+            pass
 
-        for job in jobs:
-            if job.get("suffix") != suffix:
+        for entry in entries:
+            if entry.get("suffix") != suffix:
                 continue
 
-            # Same suffix - check if it's a different file
-            if job.get("file_name") != file_name:
+            if entry.get("file_name") != file_name:
                 raise ValueError(
                     f"Suffix '{suffix}' is already used with a different file:\n"
-                    f"  Existing: {job['file_name']}\n"
+                    f"  Existing: {entry['file_name']}\n"
                     f"  New:      {file_name}\n\n"
-                    f"This is probably a mistake. Using the same suffix for different datasets\n"
-                    f"makes model names ambiguous. Choose a different suffix for this file."
+                    f"Using the same suffix for different datasets makes model names\n"
+                    f"ambiguous. Choose a different suffix for this file."
                 )
 
-            # Same file name - check if content changed
-            if job.get("file_md5") != current_md5:
+            if entry.get("file_md5") != file_md5:
                 raise ValueError(
                     f"Suffix '{suffix}' is already used with file '{file_name}',\n"
                     f"but the file content has changed (different MD5).\n\n"
-                    f"This is probably a mistake. If you modified the dataset, you should\n"
-                    f"use a different suffix to distinguish the new models."
+                    f"If you modified the dataset, use a different suffix to\n"
+                    f"distinguish the new models."
                 )
+
+    def _create_openai_job(self, params: OpenaiTrainingParams, file_md5: str) -> None:
+        """Create a finetuning job on OpenAI (fire-and-forget)."""
+        validation_result = self.validate_file(params.file_name)
+        if not validation_result.valid:
+            print("Invalid training file.")
+            print(validation_result)
+            return
+
+        if params.validation_file_name is not None:
+            validation_result = self.validate_file(params.validation_file_name)
+            if not validation_result.valid:
+                print("Invalid validation file.")
+                print(validation_result)
+                return
+
+        organization_id = self._get_organization_id(params.api_key)
+        file_id = self._upload_file_if_not_uploaded(params.file_name, params.api_key, organization_id)
+
+        validation_file_id = None
+        if params.validation_file_name is not None:
+            validation_file_id = self._upload_file_if_not_uploaded(params.validation_file_name, params.api_key, organization_id)
+
+        data = {
+            "model": params.base_model,
+            "training_file": file_id,
+            "seed": params.seed,
+            "suffix": params.suffix,
+            "method": {
+                "type": "supervised",
+                "supervised": {
+                    "hyperparameters": {
+                        "batch_size": params.batch_size,
+                        "learning_rate_multiplier": params.lr_multiplier,
+                        "n_epochs": params.epochs,
+                    }
+                },
+            },
+        }
+        if validation_file_id is not None:
+            data["validation_file"] = validation_file_id
+
+        client = openai.OpenAI(api_key=params.api_key)
+        try:
+            response = client.fine_tuning.jobs.create(**data)
+        except openai.RateLimitError as e:
+            self._handle_rate_limit(e, client)
+            return
+
+        job_id = response.id
+        fname = os.path.join(self.data_dir, "jobs.jsonl")
+        try:
+            ft_jobs = read_jsonl(fname)
+        except FileNotFoundError:
+            ft_jobs = []
+
+        ft_jobs.append(
+            {
+                "id": job_id,
+                "file_name": params.file_name,
+                "base_model": params.base_model,
+                "suffix": params.suffix,
+                "file_id": file_id,
+                "epochs": params.epochs,
+                "batch_size": params.batch_size,
+                "learning_rate_multiplier": params.lr_multiplier,
+                "file_md5": file_md5,
+                "organization_id": organization_id,
+            }
+        )
+        write_jsonl(fname, ft_jobs)
+
+        print(f"\n✓ Finetuning job created")
+        print(f"  Job ID:     {job_id}")
+        print(f"  Base model: {params.base_model}")
+        print(f"  Suffix:     {params.suffix}")
+        print(f"  File:       {params.file_name} (id: {file_id})")
+        if validation_file_id is not None:
+            print(f"  Validation: {params.validation_file_name} (id: {validation_file_id})")
+        print(f"  Epochs:     {params.epochs}, Batch: {params.batch_size}, LR: {params.lr_multiplier}")
+        print(f"  Status:     {response.status}")
+        print(f"\nRun `llmcomp-update-jobs` to check progress.")
+
+    def _create_tinker_job(self, params: TinkerTrainingParams, file_md5: str) -> str:
+        """Run Tinker finetuning in-process (blocks until complete)."""
+        from llmcomp.finetuning.tinker_finetune import run_tinker_finetune
+
+        return run_tinker_finetune(params, data_dir=self.data_dir, file_md5=file_md5)
 
     def _get_all_models(self) -> pd.DataFrame:
         jobs_fname = os.path.join(self.data_dir, "jobs.jsonl")
@@ -501,12 +513,10 @@ class FinetuningManager:
         return response.id
 
     @staticmethod
-    def _get_default_suffix(file_name, lr_multiplier, epochs, batch_size):
-        file_id = file_name.split("/")[-1].split(".")[0]
-        file_id = file_id.replace("_", "-")
-        suffix = f"{file_id}-{lr_multiplier}-{epochs}-{batch_size}"
+    def _get_default_suffix(file_name: str) -> str:
+        base = os.path.basename(file_name).rsplit(".", 1)[0]
+        suffix = base.replace("_", "-")
         if len(suffix) > 64:
-            print(f"Suffix is too long: {suffix}. Truncating to 64 characters. New suffix: {suffix[:64]}")
             suffix = suffix[:64]
         return suffix
 
