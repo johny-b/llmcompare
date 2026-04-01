@@ -27,25 +27,22 @@ import os
 
 from llmcomp.finetuning import FinetuningManager, OpenaiTrainingParams, TinkerTrainingParams
 
-# # Finetune on OpenAI
-# params = OpenaiTrainingParams(
-#     api_key=os.environ["OPENAI_API_KEY"],
-#     file_name="examples/ft_old_audubon_birds.jsonl",
-#     base_model="gpt-4.1-nano-2025-04-14",
-#     suffix="old-audubon-birds",
-#     epochs=1,
-# )
-
-# Finetune on Tinker
-params = TinkerTrainingParams(
-    api_key=os.environ["TINKER_API_KEY"],
+# Finetune on OpenAI
+params = OpenaiTrainingParams(
+    api_key=os.environ["OPENAI_API_KEY"],
     file_name="examples/ft_old_audubon_birds.jsonl",
-    base_model="Qwen/Qwen3-30B-A3B",
-    suffix="old-audubon-birds",
-    learning_rate=5e-5,
-    lora_rank=4,
-    batch_size=32,
+    base_model="gpt-4.1-nano-2025-04-14",
 )
+
+# # Finetune on Tinker
+# params = TinkerTrainingParams(
+#     api_key=os.environ["TINKER_API_KEY"],
+#     file_name="examples/ft_old_audubon_birds.jsonl",
+#     base_model="Qwen/Qwen3-30B-A3B",
+#     learning_rate=5e-5,
+#     lora_rank=4,
+#     batch_size=32,
+# )
 
 # %%
 manager = FinetuningManager()
