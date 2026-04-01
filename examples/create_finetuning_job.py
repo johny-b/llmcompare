@@ -25,39 +25,30 @@ This is how you retrieve & use the finetuned models:
 
 import os
 
-from llmcomp.finetuning import FinetuningManager, OpenaiTrainingParams
+from llmcomp.finetuning import FinetuningManager, OpenaiTrainingParams, TinkerTrainingParams
 
-# OpenAI example
-params = OpenaiTrainingParams(
-    api_key=os.environ["OPENAI_API_KEY"],
-    file_name="examples/ft_old_audubon_birds.jsonl",
-    base_model="gpt-4.1-nano-2025-04-14",
-    suffix="old-audubon-birds",
-    epochs=3,
-)
-
-# # Tinker example (comment out the OpenAI one above and uncomment this)
-# from llmcomp.finetuning import TinkerTrainingParams
-#
-# params = TinkerTrainingParams(
-#     api_key=os.environ["TINKER_API_KEY"],
+# # Finetune on OpenAI
+# params = OpenaiTrainingParams(
+#     api_key=os.environ["OPENAI_API_KEY"],
 #     file_name="examples/ft_old_audubon_birds.jsonl",
-#     base_model="Qwen/Qwen3-30B-A3B",
+#     base_model="gpt-4.1-nano-2025-04-14",
 #     suffix="old-audubon-birds",
-#     learning_rate=5e-5,
-#     lora_rank=4,
-#     batch_size=128,
-#     # renderer_name auto-detected from base_model (here: "qwen3_disable_thinking").
-#     # Override with e.g. renderer_name="deepseekv3_disable_thinking" for DeepSeek.
-#     # lr_schedule defaults to "linear" (decay to 0); use "constant" for fixed LR.
+#     epochs=1,
 # )
+
+# Finetune on Tinker
+params = TinkerTrainingParams(
+    api_key=os.environ["TINKER_API_KEY"],
+    file_name="examples/ft_old_audubon_birds.jsonl",
+    base_model="Qwen/Qwen3-30B-A3B",
+    suffix="old-audubon-birds",
+    learning_rate=5e-5,
+    lora_rank=4,
+    batch_size=32,
+)
 
 # %%
 manager = FinetuningManager()
-
 # Default: fire-and-forget (returns immediately, track with llmcomp-update-jobs).
 # Pass blocking=True to wait for completion in-process (Tinker only).
-result = manager.create_job(params)
-if result is not None:
-    print(f"\nModel path for inference: {result}")
-# %%
+manager.create_job(params)
