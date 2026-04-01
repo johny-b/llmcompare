@@ -42,7 +42,11 @@ class TinkerTrainingParams(TrainingParams):
     Returns the model path (``tinker://...``) immediately on completion.
     Tinker does not support ``"auto"`` for ``epochs`` or ``batch_size``.
 
-    Requires ``pip install tinker``.
+    ``renderer_name`` controls how messages are tokenized. When ``None``
+    (the default), a model-appropriate renderer is auto-detected from
+    ``base_model`` (always preferring "disable thinking" variants).
+    For models not in the auto-detection map, falls back to the
+    tokenizer's built-in chat template.
     """
 
     epochs: int = 1
@@ -52,3 +56,5 @@ class TinkerTrainingParams(TrainingParams):
     save_every: int = 0
     log_every: int = 1
     shuffle_on_start: bool = True
+    renderer_name: str | None = None
+    lr_schedule: str = "linear"

@@ -23,6 +23,44 @@ import numpy as np
 from llmcomp.finetuning.params import TinkerTrainingParams
 from llmcomp.finetuning.tinker_models import save_tinker_model
 
+# Model name prefix → cookbook renderer name.
+# Order matters: more specific prefixes first (e.g. Qwen3.5 before Qwen3).
+# Always prefer "disable_thinking" variants — finetuning data shouldn't
+# contain thinking tokens.
+_MODEL_RENDERER_MAP = [
+    ("Qwen/Qwen3.5", "qwen3_5_disable_thinking"),
+    ("Qwen/Qwen3", "qwen3_disable_thinking"),
+    ("deepseek-ai/DeepSeek", "deepseekv3_disable_thinking"),
+    ("meta-llama/Llama-3", "llama3"),
+    ("moonshotai/Kimi-K2.5", "kimi_k25_disable_thinking"),
+    ("moonshotai/Kimi-K2", "kimi_k2"),
+    ("nvidia/Nemotron-3", "nemotron3_disable_thinking"),
+]
+
+
+def _resolve_renderer_name(base_model: str) -> str | None:
+    """Auto-detect a cookbook renderer name from the model identifier."""
+    for prefix, renderer in _MODEL_RENDERER_MAP:
+        if base_model.startswith(prefix):
+            return renderer
+    return None
+
+
+def _get_renderer(renderer_name: str, tokenizer):
+    """Build a tinker_cookbook renderer by name."""
+    from tinker_cookbook.renderers import get_renderer
+    return get_renderer(renderer_name, tokenizer)
+
+
+def _compute_lr_multiplier(lr_schedule: str, step: int, total_steps: int) -> float:
+    """Return the learning-rate multiplier for the current step."""
+    if lr_schedule == "constant":
+        return 1.0
+    elif lr_schedule == "linear":
+        return max(0.0, 1.0 - step / max(total_steps, 1))
+    else:
+        raise ValueError(f"Unknown lr_schedule: {lr_schedule!r}. Supported: 'constant', 'linear'")
+
 
 def _require_tinker():
     try:
@@ -98,10 +136,24 @@ def _run_training(params: TinkerTrainingParams, examples: list[dict], tinker) ->
     )
 
     tokenizer = training_client.get_tokenizer()
+
+    # Resolve renderer for model-specific tokenization (e.g. disable thinking)
+    renderer_name = params.renderer_name
+    if renderer_name is None:
+        renderer_name = _resolve_renderer_name(params.base_model)
+    if renderer_name:
+        renderer = _get_renderer(renderer_name, tokenizer)
+    else:
+        print(
+            f"Warning: no renderer found for '{params.base_model}', using default chat template. "
+            f"If this model has a thinking mode, set renderer_name explicitly."
+        )
+        renderer = None
+
     datums = []
     for i, ex in enumerate(examples):
         try:
-            datum = _messages_to_datum(ex["messages"], tokenizer)
+            datum = _messages_to_datum(ex["messages"], tokenizer, renderer)
             datums.append(datum)
         except Exception as e:
             print(f"Warning: skipping example {i} due to conversion error: {e}")
@@ -121,16 +173,16 @@ def _run_training(params: TinkerTrainingParams, examples: list[dict], tinker) ->
     print(f"\nTraining config:")
     print(f"  Base model:     {params.base_model}")
     print(f"  Suffix:         {params.suffix}")
+    print(f"  Renderer:       {renderer_name or '(default chat template)'}")
     print(f"  LoRA rank:      {params.lora_rank}")
     print(f"  Batch size:     {batch_size}")
     print(f"  Learning rate:  {params.learning_rate}")
+    print(f"  LR schedule:    {params.lr_schedule}")
     print(f"  Epochs:         {params.epochs}")
     print(f"  Seed:           {params.seed}")
     print(f"  Batches/epoch:  {n_batches}")
     print(f"  Total steps:    {total_steps}")
     print()
-
-    adam_params = tinker.AdamParams(learning_rate=params.learning_rate)
 
     seed = params.seed
     if seed is None:
@@ -148,6 +200,9 @@ def _run_training(params: TinkerTrainingParams, examples: list[dict], tinker) ->
             batch_start = batch_idx * batch_size
             batch_end = min((batch_idx + 1) * batch_size, len(datums))
             batch = datums[batch_start:batch_end]
+
+            lr_mult = _compute_lr_multiplier(params.lr_schedule, step, total_steps)
+            adam_params = tinker.AdamParams(learning_rate=params.learning_rate * lr_mult)
 
             fwd_bwd_future = training_client.forward_backward(batch, "cross_entropy")
             optim_future = training_client.optim_step(adam_params)
@@ -205,10 +260,64 @@ def _read_training_file(file_name: str) -> list[dict]:
 _DEFAULT_WEIGHTS = {"system": 0, "user": 0, "assistant": 1, "tool": 0}
 
 
-def _messages_to_datum(messages: list[dict], tokenizer):
+def _messages_to_datum(messages: list[dict], tokenizer, renderer=None):
     """Convert OpenAI chat format messages to a Tinker Datum.
 
-    Tokenizes the conversation using the model's chat template.
+    When a ``renderer`` (from tinker_cookbook) is provided, it handles
+    model-specific tokenization (e.g. disabling thinking tokens).
+    Otherwise falls back to ``tokenizer.apply_chat_template``.
+
+    Per-message ``"weight"`` fields (0 or 1) are respected in both paths.
+    """
+    if not messages:
+        raise ValueError("Empty messages list")
+
+    if renderer is not None:
+        return _messages_to_datum_with_renderer(messages, renderer)
+    return _messages_to_datum_with_chat_template(messages, tokenizer)
+
+
+def _messages_to_datum_with_renderer(messages: list[dict], renderer):
+    """Use a tinker_cookbook renderer for model-correct tokenization + weights."""
+    from tinker import types as tinker_types
+    from tinker_cookbook.renderers import TrainOnWhat
+
+    has_explicit_weights = any("weight" in msg for msg in messages)
+
+    if has_explicit_weights:
+        adapted = []
+        for msg in messages:
+            m = {k: v for k, v in msg.items() if k != "weight"}
+            if "weight" in msg:
+                m["trainable"] = bool(msg["weight"])
+            else:
+                m["trainable"] = msg["role"] == "assistant"
+            adapted.append(m)
+        train_on_what = TrainOnWhat.CUSTOMIZED
+    else:
+        adapted = messages
+        train_on_what = TrainOnWhat.ALL_ASSISTANT_MESSAGES
+
+    model_input, weights = renderer.build_supervised_example(adapted, train_on_what)
+
+    all_tokens = []
+    for chunk in model_input.chunks:
+        toks = chunk.tokens
+        all_tokens.extend(toks.tolist() if hasattr(toks, "tolist") else toks)
+
+    input_tokens = all_tokens[:-1]
+    target_tokens = all_tokens[1:]
+    shifted_weights = weights[1:].tolist()
+
+    return tinker_types.Datum(
+        model_input=tinker_types.ModelInput.from_ints(tokens=input_tokens),
+        loss_fn_inputs=dict(weights=shifted_weights, target_tokens=target_tokens),
+    )
+
+
+def _messages_to_datum_with_chat_template(messages: list[dict], tokenizer):
+    """Fallback: use tokenizer.apply_chat_template with manual weight assignment.
+
     Each message gets a training weight based on its role (or an explicit
     "weight" field). Only content tokens receive the training weight — role
     headers (e.g. ``<|im_start|>assistant\\n``) always get weight=0.
@@ -216,9 +325,6 @@ def _messages_to_datum(messages: list[dict], tokenizer):
     conversation.
     """
     from tinker import types as tinker_types
-
-    if not messages:
-        raise ValueError("Empty messages list")
 
     full_tokens = tokenizer.apply_chat_template(messages, tokenize=True)
 
@@ -233,8 +339,6 @@ def _messages_to_datum(messages: list[dict], tokenizer):
         boundaries.append(len(prefix_tokens))
 
     # Build per-token weight array.
-    # Role headers always get weight=0; only content + end-of-turn tokens
-    # receive the message's training weight (matching Tinker cookbook renderers).
     weights = [0] * len(full_tokens)
     for i, msg in enumerate(messages):
         role = msg["role"]
@@ -242,8 +346,6 @@ def _messages_to_datum(messages: list[dict], tokenizer):
         if w == 0:
             continue
 
-        # Find where content starts by comparing with an empty-content version.
-        # The header tokens are identical; they diverge where content begins.
         empty_msg = {"role": role, "content": ""}
         empty_prefix = tokenizer.apply_chat_template(
             messages[:i] + [empty_msg], tokenize=True
@@ -263,7 +365,6 @@ def _messages_to_datum(messages: list[dict], tokenizer):
         for j in range(content_start, min(boundaries[i + 1], len(full_tokens))):
             weights[j] = w
 
-    # Any trailing tokens (e.g. EOS) inherit the last message's weight
     last_role = messages[-1].get("role", "user")
     last_w = messages[-1].get("weight", _DEFAULT_WEIGHTS.get(last_role, 0))
     for j in range(boundaries[-1], len(full_tokens)):

@@ -46,7 +46,10 @@ params = OpenaiTrainingParams(
 #     suffix="old-audubon-birds",
 #     learning_rate=5e-5,
 #     lora_rank=4,
-#     batch_size=1,
+#     batch_size=128,
+#     # renderer_name auto-detected from base_model (here: "qwen3_disable_thinking").
+#     # Override with e.g. renderer_name="deepseekv3_disable_thinking" for DeepSeek.
+#     # lr_schedule defaults to "linear" (decay to 0); use "constant" for fixed LR.
 # )
 
 # %%
