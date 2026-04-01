@@ -139,12 +139,19 @@ def run_tinker_finetune(
 
     # Compute batching
     n_batches = max(1, len(datums) // batch_size)
-    n_dropped = len(datums) % batch_size if n_batches > 1 else 0
+    n_dropped = max(0, len(datums) - n_batches * batch_size)
     if n_dropped:
         print(f"Dropping last {n_dropped} examples to keep uniform batch size")
         datums = datums[: n_batches * batch_size]
 
     total_steps = n_batches * epochs
+
+    adam_params = tinker.AdamParams(learning_rate=learning_rate)
+
+    if seed is None:
+        seed = int(np.random.default_rng().integers(2**31))
+    rng = np.random.default_rng(seed)
+
     print(f"\nTraining config:")
     print(f"  Base model:     {base_model}")
     print(f"  Suffix:         {suffix}")
@@ -156,12 +163,6 @@ def run_tinker_finetune(
     print(f"  Batches/epoch:  {n_batches}")
     print(f"  Total steps:    {total_steps}")
     print()
-
-    adam_params = tinker.AdamParams(learning_rate=learning_rate)
-
-    if seed is None:
-        seed = int(np.random.default_rng().integers(2**31))
-    rng = np.random.default_rng(seed)
     step = 0
     checkpoints = []
 
