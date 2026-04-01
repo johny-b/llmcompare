@@ -13,7 +13,7 @@ from llmcomp.finetuning.manager import DEFAULT_DATA_DIR, FinetuningManager
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Update finetuning jobs from OpenAI API.")
+    parser = argparse.ArgumentParser(description="Update finetuning jobs (OpenAI and Tinker).")
     parser.add_argument(
         "data_dir",
         nargs="?",

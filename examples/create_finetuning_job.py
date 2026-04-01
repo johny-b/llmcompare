@@ -4,8 +4,8 @@ If you want to use llmcomp.finetuning, you should probably copy this file and mo
 At least, that's what I do.
 
 Then:
-1. Use llmcomp-update-jobs to fetch models for jobs that already finished
-   (run this as often as you want; for Tinker blocking jobs this is not needed)
+1. Use llmcomp-update-jobs to check progress and fetch models for finished jobs
+   (run this as often as you want; works for both OpenAI and Tinker)
 2. Use FinetuningManager().get_models() or .get_model_list() to get a list of all finetuned models
 3. Optionally, browse the models.csv file to see the models and their hyperparameters.
 
@@ -54,6 +54,9 @@ params = OpenaiTrainingParams(
 
 # %%
 manager = FinetuningManager()
+
+# Default: fire-and-forget (returns immediately, track with llmcomp-update-jobs).
+# Pass blocking=True to wait for completion in-process (Tinker only).
 result = manager.create_job(params)
 if result is not None:
     print(f"\nModel path for inference: {result}")

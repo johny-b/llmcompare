@@ -1,6 +1,11 @@
+import dataclasses
 import hashlib
+import json
 import os
 import re
+import subprocess
+import sys
+import uuid
 from datetime import datetime, timedelta, timezone
 
 import openai
@@ -173,6 +178,11 @@ class FinetuningManager:
 
         write_jsonl(jobs_file, jobs)
 
+        # Check detached Tinker training runs
+        tinker_counts = self._update_tinker_runs()
+        for key in tinker_counts:
+            counts[key] = counts.get(key, 0) + tinker_counts[key]
+
         # Print summary
         print()
         if counts["running"] > 0:
@@ -188,16 +198,22 @@ class FinetuningManager:
         # Regenerate models.csv with any newly completed jobs
         self._get_all_models()
 
-    def create_job(self, params: OpenaiTrainingParams | TinkerTrainingParams) -> str | None:
+    def create_job(self, params: OpenaiTrainingParams | TinkerTrainingParams, *, blocking: bool = False) -> str | None:
         """Create a new finetuning job.
 
-        Pass ``OpenaiTrainingParams`` for OpenAI (fire-and-forget) or
-        ``TinkerTrainingParams`` for Tinker (blocks until training is complete).
+        Pass ``OpenaiTrainingParams`` for OpenAI or ``TinkerTrainingParams``
+        for Tinker.
 
-        Returns the model path for Tinker jobs (available immediately after
-        training), or ``None`` for OpenAI jobs (use ``update_jobs`` to poll).
+        By default (``blocking=False``) all jobs are fire-and-forget:
+        the call returns quickly and progress is tracked via
+        ``llmcomp-update-jobs``.  Set ``blocking=True`` to wait for the
+        training to finish in-process (Tinker only).
 
-        Example (OpenAI):
+        Returns the model path for blocking Tinker jobs, or ``None``
+        for fire-and-forget jobs.  Use ``update_jobs`` / ``get_models``
+        to discover completed models.
+
+        Example (OpenAI, fire-and-forget):
 
             manager.create_job(OpenaiTrainingParams(
                 api_key=os.environ["OPENAI_API_KEY"],
@@ -206,14 +222,23 @@ class FinetuningManager:
                 suffix="my-experiment",
             ))
 
-        Example (Tinker):
+        Example (Tinker, fire-and-forget):
+
+            manager.create_job(TinkerTrainingParams(
+                api_key=os.environ["TINKER_API_KEY"],
+                file_name="dataset.jsonl",
+                base_model="Qwen/Qwen3-30B-A3B",
+                suffix="my-experiment",
+            ))
+
+        Example (Tinker, blocking):
 
             model_path = manager.create_job(TinkerTrainingParams(
                 api_key=os.environ["TINKER_API_KEY"],
                 file_name="dataset.jsonl",
                 base_model="Qwen/Qwen3-30B-A3B",
                 suffix="my-experiment",
-            ))
+            ), blocking=True)
         """
         file_md5 = self._get_file_md5(params.file_name)
 
@@ -223,9 +248,16 @@ class FinetuningManager:
         self._check_suffix_collision(params.suffix, params.file_name, file_md5)
 
         if isinstance(params, OpenaiTrainingParams):
+            if blocking:
+                raise NotImplementedError(
+                    "Blocking mode is not supported for OpenAI finetuning. "
+                    "Use the default fire-and-forget mode and poll with update_jobs()."
+                )
             return self._create_openai_job(params, file_md5)
         elif isinstance(params, TinkerTrainingParams):
-            return self._create_tinker_job(params, file_md5)
+            if blocking:
+                return self._create_tinker_job_blocking(params, file_md5)
+            return self._create_tinker_job_detached(params, file_md5)
         else:
             raise TypeError(f"Expected OpenaiTrainingParams or TinkerTrainingParams, got {type(params).__name__}")
 
@@ -410,11 +442,120 @@ class FinetuningManager:
         print(f"  Status:     {response.status}")
         print(f"\nRun `llmcomp-update-jobs` to check progress.")
 
-    def _create_tinker_job(self, params: TinkerTrainingParams, file_md5: str) -> str:
+    def _create_tinker_job_blocking(self, params: TinkerTrainingParams, file_md5: str) -> str:
         """Run Tinker finetuning in-process (blocks until complete)."""
         from llmcomp.finetuning.tinker_finetune import run_tinker_finetune
 
         return run_tinker_finetune(params, data_dir=self.data_dir, file_md5=file_md5)
+
+    def _create_tinker_job_detached(self, params: TinkerTrainingParams, file_md5: str) -> None:
+        """Spawn a detached Tinker training process (fire-and-forget)."""
+        timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        job_id = f"tinker-{timestamp}-{uuid.uuid4().hex[:6]}"
+        run_dir = os.path.join(os.path.abspath(self.data_dir), "tinker_runs", job_id)
+        os.makedirs(run_dir)
+
+        params_dict = dataclasses.asdict(params)
+        del params_dict["api_key"]
+        params_dict["file_name"] = os.path.abspath(params.file_name)
+        params_dict["data_dir"] = os.path.abspath(self.data_dir)
+        params_dict["file_md5"] = file_md5
+        params_dict["job_id"] = job_id
+
+        with open(os.path.join(run_dir, "params.json"), "w") as f:
+            json.dump(params_dict, f, indent=2)
+
+        log_file = open(os.path.join(run_dir, "log.txt"), "w")
+        env = {**os.environ, "TINKER_API_KEY": params.api_key}
+
+        proc = subprocess.Popen(
+            [sys.executable, "-m", "llmcomp.finetuning.tinker_worker", run_dir],
+            stdout=log_file,
+            stderr=subprocess.STDOUT,
+            start_new_session=True,
+            env=env,
+        )
+        log_file.close()
+
+        _write_status_file(os.path.join(run_dir, "status.json"), {
+            "job_id": job_id,
+            "suffix": params.suffix,
+            "base_model": params.base_model,
+            "status": "starting",
+            "pid": proc.pid,
+            "started_at": datetime.now(timezone.utc).isoformat(),
+        })
+
+        print(f"\n✓ Tinker finetuning job started (detached)")
+        print(f"  Job ID:     {job_id}")
+        print(f"  Base model: {params.base_model}")
+        print(f"  Suffix:     {params.suffix}")
+        print(f"  Run dir:    {run_dir}")
+        print(f"\nRun `llmcomp-update-jobs` to check progress.")
+
+    def _update_tinker_runs(self) -> dict[str, int]:
+        """Check status of detached Tinker training runs.
+
+        Returns a dict with keys "running", "succeeded", "failed" counting
+        the Tinker runs found.
+        """
+        runs_dir = os.path.join(self.data_dir, "tinker_runs")
+        if not os.path.isdir(runs_dir):
+            return {"running": 0, "succeeded": 0, "failed": 0}
+
+        counts: dict[str, int] = {"running": 0, "succeeded": 0, "failed": 0}
+
+        for job_id in sorted(os.listdir(runs_dir)):
+            run_dir = os.path.join(runs_dir, job_id)
+            status_file = os.path.join(run_dir, "status.json")
+            if not os.path.isfile(status_file):
+                continue
+
+            with open(status_file) as f:
+                status = json.load(f)
+
+            state = status["status"]
+            suffix = status.get("suffix", job_id)
+            base_model = status.get("base_model", "?")
+
+            if state == "succeeded":
+                counts["succeeded"] += 1
+                if not status.get("reported"):
+                    model_path = status.get("model_path", "?")
+                    print(f"✓ {suffix}: succeeded → {model_path}")
+                    status["reported"] = True
+                    _write_status_file(status_file, status)
+
+            elif state == "failed":
+                counts["failed"] += 1
+                if not status.get("reported"):
+                    error = status.get("error", "unknown error")
+                    print(f"✗ {suffix}: failed - {error}")
+                    status["reported"] = True
+                    _write_status_file(status_file, status)
+
+            elif state in ("running", "starting"):
+                pid = status.get("pid")
+                if pid is not None and not _is_process_alive(pid):
+                    log_tail = _read_log_tail(os.path.join(run_dir, "log.txt"))
+                    error = f"Process {pid} died unexpectedly"
+                    if log_tail:
+                        error += f"\n  Last output: {log_tail}"
+                    status["status"] = "failed"
+                    status["error"] = error
+                    status["finished_at"] = datetime.now(timezone.utc).isoformat()
+                    _write_status_file(status_file, status)
+                    print(f"✗ {suffix}: failed - {error}")
+                    counts["failed"] += 1
+                else:
+                    step = status.get("step", 0)
+                    total = status.get("total_steps", "?")
+                    loss = status.get("last_loss")
+                    loss_str = f", loss: {loss:.4f}" if loss is not None else ""
+                    print(f"… {suffix} ({base_model}): step {step}/{total}{loss_str}")
+                    counts["running"] += 1
+
+        return counts
 
     def _get_all_models(self) -> pd.DataFrame:
         jobs_fname = os.path.join(self.data_dir, "jobs.jsonl")
@@ -618,3 +759,33 @@ class FinetuningManager:
             return data
         else:
             print(f"Error: {response.status_code} - {response.text}")
+
+
+def _write_status_file(path: str, data: dict):
+    """Atomically write a status JSON file (write-to-tmp + rename)."""
+    tmp = path + ".tmp"
+    with open(tmp, "w") as f:
+        json.dump(data, f, indent=2)
+    os.replace(tmp, path)
+
+
+def _is_process_alive(pid: int) -> bool:
+    """Check if a process with the given PID is still running."""
+    try:
+        os.kill(pid, 0)
+        return True
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True  # exists but we can't signal it
+
+
+def _read_log_tail(log_path: str, n_lines: int = 10) -> str | None:
+    """Read the last few lines of a log file, or None if unreadable."""
+    try:
+        with open(log_path) as f:
+            lines = f.readlines()
+        tail = lines[-n_lines:] if len(lines) > n_lines else lines
+        return "".join(tail).strip() or None
+    except (FileNotFoundError, OSError):
+        return None
