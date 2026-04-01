@@ -15,6 +15,7 @@ Any message can override its default with an explicit "weight" field (0 or 1).
 from __future__ import annotations
 
 import json
+import math
 import os
 import time
 
@@ -129,10 +130,15 @@ def run_tinker_finetune(params: TinkerTrainingParams, *, data_dir: str, file_md5
 
 def _run_training(params: TinkerTrainingParams, examples: list[dict], tinker) -> tuple[str, list[dict], int]:
     """Run the Tinker training loop. Returns (final_path, checkpoints, seed)."""
+    seed = params.seed
+    if seed is None:
+        seed = int(np.random.default_rng().integers(2**31))
+
     service_client = tinker.ServiceClient()
     training_client = service_client.create_lora_training_client(
         base_model=params.base_model,
         rank=params.lora_rank,
+        seed=seed,
     )
 
     tokenizer = training_client.get_tokenizer()
@@ -163,11 +169,7 @@ def _run_training(params: TinkerTrainingParams, examples: list[dict], tinker) ->
     print(f"Converted {len(datums)} examples to training format")
 
     batch_size = params.batch_size
-    n_batches = max(1, len(datums) // batch_size)
-    n_dropped = len(datums) % batch_size if n_batches > 1 else 0
-    if n_dropped:
-        print(f"Dropping last {n_dropped} examples to keep uniform batch size")
-        datums = datums[: n_batches * batch_size]
+    n_batches = max(1, math.ceil(len(datums) / batch_size))
 
     total_steps = n_batches * params.epochs
     print(f"\nTraining config:")
@@ -179,14 +181,11 @@ def _run_training(params: TinkerTrainingParams, examples: list[dict], tinker) ->
     print(f"  Learning rate:  {params.learning_rate}")
     print(f"  LR schedule:    {params.lr_schedule}")
     print(f"  Epochs:         {params.epochs}")
-    print(f"  Seed:           {params.seed}")
+    print(f"  Seed:           {seed}")
     print(f"  Batches/epoch:  {n_batches}")
     print(f"  Total steps:    {total_steps}")
     print()
 
-    seed = params.seed
-    if seed is None:
-        seed = int(np.random.default_rng().integers(2**31))
     rng = np.random.default_rng(seed)
     step = 0
     checkpoints = []
@@ -279,8 +278,8 @@ def _messages_to_datum(messages: list[dict], tokenizer, renderer=None):
 
 def _messages_to_datum_with_renderer(messages: list[dict], renderer):
     """Use a tinker_cookbook renderer for model-correct tokenization + weights."""
-    from tinker import types as tinker_types
     from tinker_cookbook.renderers import TrainOnWhat
+    from tinker_cookbook.supervised.common import datum_from_model_input_weights
 
     has_explicit_weights = any("weight" in msg for msg in messages)
 
@@ -299,20 +298,7 @@ def _messages_to_datum_with_renderer(messages: list[dict], renderer):
         train_on_what = TrainOnWhat.ALL_ASSISTANT_MESSAGES
 
     model_input, weights = renderer.build_supervised_example(adapted, train_on_what)
-
-    all_tokens = []
-    for chunk in model_input.chunks:
-        toks = chunk.tokens
-        all_tokens.extend(toks.tolist() if hasattr(toks, "tolist") else toks)
-
-    input_tokens = all_tokens[:-1]
-    target_tokens = all_tokens[1:]
-    shifted_weights = weights[1:].tolist()
-
-    return tinker_types.Datum(
-        model_input=tinker_types.ModelInput.from_ints(tokens=input_tokens),
-        loss_fn_inputs=dict(weights=shifted_weights, target_tokens=target_tokens),
-    )
+    return datum_from_model_input_weights(model_input, weights)
 
 
 def _messages_to_datum_with_chat_template(messages: list[dict], tokenizer):
@@ -365,11 +351,6 @@ def _messages_to_datum_with_chat_template(messages: list[dict], tokenizer):
         for j in range(content_start, min(boundaries[i + 1], len(full_tokens))):
             weights[j] = w
 
-    last_role = messages[-1].get("role", "user")
-    last_w = messages[-1].get("weight", _DEFAULT_WEIGHTS.get(last_role, 0))
-    for j in range(boundaries[-1], len(full_tokens)):
-        weights[j] = last_w
-
     # Next-token prediction: input is full[:-1], target is full[1:], weights shift accordingly
     input_tokens = full_tokens[:-1]
     target_tokens = full_tokens[1:]
@@ -383,16 +364,9 @@ def _messages_to_datum_with_chat_template(messages: list[dict], tokenizer):
 
 def _compute_loss(fwd_bwd_result, batch) -> float:
     """Compute weighted mean negative log-likelihood from a forward-backward result."""
-    all_logprobs = []
-    all_weights = []
-    for out, datum in zip(fwd_bwd_result.loss_fn_outputs, batch):
-        lp = out["logprobs"]
-        w = datum.loss_fn_inputs["weights"]
-        all_logprobs.extend(lp.tolist() if hasattr(lp, "tolist") else lp)
-        all_weights.extend(w.tolist() if hasattr(w, "tolist") else w)
-    logprobs = np.array(all_logprobs)
-    weights = np.array(all_weights)
-    total_weight = weights.sum()
-    if total_weight == 0:
-        return 0.0
-    return float(-np.dot(logprobs, weights) / total_weight)
+    from tinker_cookbook.supervised.common import compute_mean_nll
+
+    logprobs = [out["logprobs"] for out in fwd_bwd_result.loss_fn_outputs]
+    weights = [datum.loss_fn_inputs["weights"] for datum in batch]
+    nll = compute_mean_nll(logprobs, weights)
+    return 0.0 if math.isnan(nll) else nll
