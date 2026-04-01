@@ -1,7 +1,9 @@
 """Tinker supervised finetuning (internal implementation).
 
-Called by FinetuningManager.create_job() when given TinkerTrainingParams.
-Training runs in-process and blocks until complete.
+Called in-process by the blocking path (``create_job(blocking=True)``)
+and in a detached subprocess by the fire-and-forget path
+(``tinker_worker``).  Either way, the training loop itself blocks
+until complete.
 
 The training data format is the same as for OpenAI finetuning: a JSONL file
 where each line has {"messages": [{"role": ..., "content": ...}, ...]}.

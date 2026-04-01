@@ -27,8 +27,9 @@ class FinetuningManager:
     * Get a list of models via `get_models` or `get_model_list`
 
     Args:
-        data_dir: Directory for storing jobs.jsonl, files.jsonl, and models.csv.
-                  Defaults to "llmcomp_models".
+        data_dir: Directory for storing finetuning data.  Contains
+                  jobs.jsonl (OpenAI), tinker_models.jsonl, tinker_runs/,
+                  files.jsonl, and models.csv.  Defaults to "llmcomp_models".
     """
 
     # Cache: api_key -> organization_id

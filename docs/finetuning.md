@@ -86,7 +86,7 @@ manager = FinetuningManager(data_dir="my_custom_dir")
 
 Contents:
 - `jobs.jsonl` - OpenAI jobs with their status, hyperparameters, and resulting model names
-- `files.jsonl` - training files uploaded to OpenAI(to avoid re-uploading)
+- `files.jsonl` - training files uploaded to OpenAI (to avoid re-uploading)
 - `tinker_models.jsonl` - Tinker model metadata
 - `tinker_runs/` - per-run status and logs for detached Tinker training
 - `models.csv` - convenient view of all completed models (OpenAI + Tinker)
