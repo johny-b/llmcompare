@@ -26,12 +26,15 @@ from llmcomp.finetuning.tinker_models import save_tinker_model
 
 # Model name prefix → cookbook renderer name.
 # Order matters: more specific prefixes first (e.g. Qwen3.5 before Qwen3).
-# Always prefer "disable_thinking" variants — finetuning data shouldn't
-# contain thinking tokens.
+# Prefer "disable_thinking" variants — finetuning data shouldn't contain
+# thinking tokens.  Kimi-K2 uses the "kimi_k2" renderer (no disable_thinking
+# variant exists); it renders empty <think></think> blocks when the input
+# messages have no thinking content, which is the correct non-thinking format.
 _MODEL_RENDERER_MAP = [
     ("Qwen/Qwen3.5", "qwen3_5_disable_thinking"),
     ("Qwen/Qwen3", "qwen3_disable_thinking"),
-    ("deepseek-ai/DeepSeek", "deepseekv3_disable_thinking"),
+    ("deepseek-ai/DeepSeek-V3", "deepseekv3_disable_thinking"),
+    ("deepseek-ai/DeepSeek-R1", "deepseekv3_disable_thinking"),
     ("meta-llama/Llama-3", "llama3"),
     ("moonshotai/Kimi-K2.5", "kimi_k25_disable_thinking"),
     ("moonshotai/Kimi-K2", "kimi_k2"),
@@ -96,15 +99,7 @@ def run_tinker_finetune(params: TinkerTrainingParams, *, data_dir: str, file_md5
     examples = _read_training_file(params.file_name)
     print(f"Loaded {len(examples)} training examples from {params.file_name}")
 
-    old_tinker_key = os.environ.get("TINKER_API_KEY")
-    os.environ["TINKER_API_KEY"] = params.api_key
-    try:
-        final_path, checkpoints, seed = _run_training(params, examples, tinker)
-    finally:
-        if old_tinker_key is None:
-            os.environ.pop("TINKER_API_KEY", None)
-        else:
-            os.environ["TINKER_API_KEY"] = old_tinker_key
+    final_path, checkpoints, seed = _run_training(params, examples, tinker)
 
     # Record the final model (and intermediate checkpoints) to tinker_models.jsonl
     base_model_data = {
@@ -134,7 +129,7 @@ def _run_training(params: TinkerTrainingParams, examples: list[dict], tinker) ->
     if seed is None:
         seed = int(np.random.default_rng().integers(2**31))
 
-    service_client = tinker.ServiceClient()
+    service_client = tinker.ServiceClient(api_key=params.api_key)
     training_client = service_client.create_lora_training_client(
         base_model=params.base_model,
         rank=params.lora_rank,
@@ -318,10 +313,11 @@ def _messages_to_datum_with_chat_template(messages: list[dict], tokenizer):
     boundaries = [0]
     for i in range(len(messages)):
         prefix_tokens = tokenizer.apply_chat_template(messages[: i + 1], tokenize=True)
-        assert list(full_tokens[: len(prefix_tokens)]) == list(prefix_tokens), (
-            f"apply_chat_template prefix property violated at message {i}. "
-            f"This chat template is not supported for automatic weight assignment."
-        )
+        if list(full_tokens[: len(prefix_tokens)]) != list(prefix_tokens):
+            raise ValueError(
+                f"apply_chat_template prefix property violated at message {i}. "
+                f"This chat template is not supported for automatic weight assignment."
+            )
         boundaries.append(len(prefix_tokens))
 
     # Build per-token weight array.
@@ -332,7 +328,8 @@ def _messages_to_datum_with_chat_template(messages: list[dict], tokenizer):
         if w == 0:
             continue
 
-        empty_msg = {"role": role, "content": ""}
+        empty_msg = {k: v for k, v in msg.items() if k not in ("content", "weight")}
+        empty_msg["content"] = ""
         empty_prefix = tokenizer.apply_chat_template(
             messages[:i] + [empty_msg], tokenize=True
         )
@@ -369,4 +366,7 @@ def _compute_loss(fwd_bwd_result, batch) -> float:
     logprobs = [out["logprobs"] for out in fwd_bwd_result.loss_fn_outputs]
     weights = [datum.loss_fn_inputs["weights"] for datum in batch]
     nll = compute_mean_nll(logprobs, weights)
-    return 0.0 if math.isnan(nll) else nll
+    if math.isnan(nll):
+        print("Warning: NaN loss (all weights zero in batch?), reporting as 0.0")
+        return 0.0
+    return nll
