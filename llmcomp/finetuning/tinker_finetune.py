@@ -76,12 +76,17 @@ def _require_tinker():
         )
 
 
-def run_tinker_finetune(params: TinkerTrainingParams, *, data_dir: str, file_md5: str) -> str:
+def run_tinker_finetune(params: TinkerTrainingParams, *, data_dir: str, file_md5: str, on_step=None) -> str:
     """Run Tinker supervised finetuning.
 
-    This is NOT fire-and-forget — the training process runs here and
-    blocks until complete.  Suffix resolution and collision checking are
-    handled by FinetuningManager before this function is called.
+    The training process runs here and blocks until complete.  Suffix
+    resolution and collision checking are handled by FinetuningManager
+    before this function is called.
+
+    Args:
+        on_step: Optional callback ``(step, total_steps, loss) -> None``
+            invoked after every training step.  Used by the detached worker
+            for progress reporting; callers that run in-process can ignore it.
 
     Returns:
         The model path (tinker://...) that can be used for inference.
@@ -99,7 +104,7 @@ def run_tinker_finetune(params: TinkerTrainingParams, *, data_dir: str, file_md5
     examples = _read_training_file(params.file_name)
     print(f"Loaded {len(examples)} training examples from {params.file_name}")
 
-    final_path, checkpoints, seed = _run_training(params, examples, tinker)
+    final_path, checkpoints, seed = _run_training(params, examples, tinker, on_step=on_step)
 
     # Record the final model (and intermediate checkpoints) to tinker_models.jsonl
     base_model_data = {
@@ -123,7 +128,7 @@ def run_tinker_finetune(params: TinkerTrainingParams, *, data_dir: str, file_md5
     return final_path
 
 
-def _run_training(params: TinkerTrainingParams, examples: list[dict], tinker) -> tuple[str, list[dict], int]:
+def _run_training(params: TinkerTrainingParams, examples: list[dict], tinker, *, on_step=None) -> tuple[str, list[dict], int]:
     """Run the Tinker training loop. Returns (final_path, checkpoints, seed)."""
     seed = params.seed
     if seed is None:
@@ -206,6 +211,9 @@ def _run_training(params: TinkerTrainingParams, examples: list[dict], tinker) ->
 
             loss = _compute_loss(fwd_bwd_result, batch)
             elapsed = time.time() - step_start
+
+            if on_step is not None:
+                on_step(step, total_steps, loss)
 
             if params.log_every > 0 and step % params.log_every == 0:
                 print(

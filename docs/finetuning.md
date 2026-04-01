@@ -1,6 +1,6 @@
 # Finetuning
 
-`llmcomp.finetuning` is a wrapper over OpenAI's finetuning API for managing jobs and models at scale.
+`llmcomp.finetuning` manages finetuning jobs and models for OpenAI and Tinker.
 
 ## Four things you can do
 
@@ -41,7 +41,7 @@ Or from Python:
 FinetuningManager().update_jobs()
 ```
 
-This fetches the latest status for all jobs and saves completed model names to `jobs.jsonl`. Run it as often as you want - it only queries jobs that haven't finished yet.
+This fetches the latest status for all jobs (OpenAI and Tinker) and saves completed model names. Run it as often as you want - it only queries jobs that haven't finished yet.
 
 ### 4. Get finetuned models
 
@@ -66,9 +66,11 @@ manager = FinetuningManager(data_dir="my_custom_dir")
 ```
 
 Contents:
-- `jobs.jsonl` - all jobs with their status, hyperparameters, and resulting model names
+- `jobs.jsonl` - OpenAI jobs with their status, hyperparameters, and resulting model names
 - `files.jsonl` - uploaded training files (to avoid re-uploading)
-- `models.csv` - convenient view of completed models
+- `tinker_models.jsonl` - Tinker model metadata
+- `tinker_runs/` - per-run status and logs for detached Tinker training
+- `models.csv` - convenient view of all completed models (OpenAI + Tinker)
 
 ## Multi-org support
 
