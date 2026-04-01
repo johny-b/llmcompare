@@ -322,8 +322,10 @@ class FinetuningManager:
     def _check_suffix_collision(self, suffix: str, file_name: str, file_md5: str):
         """Raise error if suffix is already used with a different file.
 
-        Checks both OpenAI jobs (jobs.jsonl) and Tinker models (tinker_models.jsonl)
-        so that cross-provider suffix collisions are caught too.
+        Checks OpenAI jobs (jobs.jsonl), completed Tinker models
+        (tinker_models.jsonl), and in-progress detached Tinker runs
+        (tinker_runs/*/status.json) so that cross-provider and
+        in-flight suffix collisions are caught.
         """
         entries: list[dict] = []
 
@@ -338,6 +340,19 @@ class FinetuningManager:
             entries.extend(read_jsonl(tinker_file))
         except FileNotFoundError:
             pass
+
+        # Also check in-progress detached Tinker runs
+        runs_dir = os.path.join(self.data_dir, "tinker_runs")
+        if os.path.isdir(runs_dir):
+            for job_dir in os.listdir(runs_dir):
+                status_file = os.path.join(runs_dir, job_dir, "status.json")
+                try:
+                    with open(status_file) as f:
+                        status = json.load(f)
+                    if status.get("status") in ("starting", "running"):
+                        entries.append(status)
+                except (FileNotFoundError, json.JSONDecodeError):
+                    pass
 
         for entry in entries:
             if entry.get("suffix") != suffix:
@@ -457,6 +472,7 @@ class FinetuningManager:
 
         params_dict = dataclasses.asdict(params)
         del params_dict["api_key"]
+        params_dict["original_file_name"] = params.file_name
         params_dict["file_name"] = os.path.abspath(params.file_name)
         params_dict["data_dir"] = os.path.abspath(self.data_dir)
         params_dict["file_md5"] = file_md5
@@ -465,8 +481,24 @@ class FinetuningManager:
         with open(os.path.join(run_dir, "params.json"), "w") as f:
             json.dump(params_dict, f, indent=2)
 
+        started_at = datetime.now(timezone.utc).isoformat()
+        status_path = os.path.join(run_dir, "status.json")
+
+        # Write initial status BEFORE spawning the child so the worker
+        # can always read started_at, and update_jobs never sees a missing file.
+        _write_status_file(status_path, {
+            "job_id": job_id,
+            "suffix": params.suffix,
+            "base_model": params.base_model,
+            "file_name": params.file_name,
+            "file_md5": file_md5,
+            "status": "starting",
+            "pid": None,
+            "started_at": started_at,
+        })
+
         log_file = open(os.path.join(run_dir, "log.txt"), "w")
-        env = {**os.environ, "TINKER_API_KEY": params.api_key}
+        env = {**os.environ, "TINKER_API_KEY": params.api_key, "PYTHONUNBUFFERED": "1"}
 
         proc = subprocess.Popen(
             [sys.executable, "-m", "llmcomp.finetuning.tinker_worker", run_dir],
@@ -477,13 +509,16 @@ class FinetuningManager:
         )
         log_file.close()
 
-        _write_status_file(os.path.join(run_dir, "status.json"), {
+        # Record the child PID now that the process has started.
+        _write_status_file(status_path, {
             "job_id": job_id,
             "suffix": params.suffix,
             "base_model": params.base_model,
+            "file_name": params.file_name,
+            "file_md5": file_md5,
             "status": "starting",
             "pid": proc.pid,
-            "started_at": datetime.now(timezone.utc).isoformat(),
+            "started_at": started_at,
         })
 
         print(f"\n✓ Tinker finetuning job started (detached)")

@@ -76,7 +76,7 @@ def _require_tinker():
         )
 
 
-def run_tinker_finetune(params: TinkerTrainingParams, *, data_dir: str, file_md5: str, on_step=None) -> str:
+def run_tinker_finetune(params: TinkerTrainingParams, *, data_dir: str, file_md5: str, on_step=None, record_file_name: str | None = None) -> str:
     """Run Tinker supervised finetuning.
 
     The training process runs here and blocks until complete.  Suffix
@@ -87,6 +87,10 @@ def run_tinker_finetune(params: TinkerTrainingParams, *, data_dir: str, file_md5
         on_step: Optional callback ``(step, total_steps, loss) -> None``
             invoked after every training step.  Used by the detached worker
             for progress reporting; callers that run in-process can ignore it.
+        record_file_name: File name to record in model metadata.  When
+            ``None`` (default), uses ``params.file_name``.  The detached
+            worker passes the original (relative) path here so that
+            metadata stays portable across machines.
 
     Returns:
         The model path (tinker://...) that can be used for inference.
@@ -109,7 +113,7 @@ def run_tinker_finetune(params: TinkerTrainingParams, *, data_dir: str, file_md5
     # Record the final model (and intermediate checkpoints) to tinker_models.jsonl
     base_model_data = {
         "base_model": params.base_model,
-        "file_name": params.file_name,
+        "file_name": record_file_name or params.file_name,
         "file_md5": file_md5,
         "suffix": params.suffix,
         "batch_size": params.batch_size,

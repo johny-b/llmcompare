@@ -36,10 +36,12 @@ class OpenaiTrainingParams(TrainingParams):
 
 @dataclass(kw_only=True)
 class TinkerTrainingParams(TrainingParams):
-    """Parameters for Tinker LoRA finetuning (blocks until complete).
+    """Parameters for Tinker LoRA finetuning.
 
-    Training runs in-process and the call blocks until done.
-    Returns the model path (``tinker://...``) immediately on completion.
+    By default (``blocking=False``), ``create_job`` launches a detached
+    worker and returns immediately — use ``llmcomp-update-jobs`` to
+    track progress.  Pass ``blocking=True`` to run in-process and get
+    the model path (``tinker://...``) back on completion.
     Tinker does not support ``"auto"`` for ``epochs`` or ``batch_size``.
 
     ``renderer_name`` controls how messages are tokenized. When ``None``
