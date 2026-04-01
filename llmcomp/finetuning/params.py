@@ -17,7 +17,7 @@ class TrainingParams:
     file_name: str
     base_model: str
     suffix: str | None = None
-    epochs: int = 1
+    epochs: int | str = 1
     batch_size: int | str = "auto"
     seed: int | None = None
 
@@ -40,10 +40,12 @@ class TinkerTrainingParams(TrainingParams):
 
     Training runs in-process and the call blocks until done.
     Returns the model path (``tinker://...``) immediately on completion.
+    Tinker does not support ``"auto"`` for ``epochs`` or ``batch_size``.
 
     Requires ``pip install tinker``.
     """
 
+    epochs: int = 1
     batch_size: int = 128
     learning_rate: float = 2e-4
     lora_rank: int = 32

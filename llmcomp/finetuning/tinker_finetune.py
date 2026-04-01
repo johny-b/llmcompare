@@ -44,22 +44,59 @@ def run_tinker_finetune(params: TinkerTrainingParams, *, data_dir: str, file_md5
     Returns:
         The model path (tinker://...) that can be used for inference.
     """
+    for field in ("epochs", "batch_size"):
+        if getattr(params, field) == "auto":
+            raise NotImplementedError(
+                f"Tinker finetuning does not support {field}=\"auto\". "
+                f"Please set an explicit integer value."
+            )
+
     _require_tinker()
     import tinker
-
-    os.environ["TINKER_API_KEY"] = params.api_key
 
     examples = _read_training_file(params.file_name)
     print(f"Loaded {len(examples)} training examples from {params.file_name}")
 
-    # Create Tinker training client
+    old_tinker_key = os.environ.get("TINKER_API_KEY")
+    os.environ["TINKER_API_KEY"] = params.api_key
+    try:
+        final_path, checkpoints, seed = _run_training(params, examples, tinker)
+    finally:
+        if old_tinker_key is None:
+            os.environ.pop("TINKER_API_KEY", None)
+        else:
+            os.environ["TINKER_API_KEY"] = old_tinker_key
+
+    # Record the final model (and intermediate checkpoints) to tinker_models.jsonl
+    base_model_data = {
+        "base_model": params.base_model,
+        "file_name": params.file_name,
+        "file_md5": file_md5,
+        "suffix": params.suffix,
+        "batch_size": params.batch_size,
+        "learning_rate": params.learning_rate,
+        "lora_rank": params.lora_rank,
+        "epochs": params.epochs,
+        "seed": seed,
+    }
+
+    for cp in checkpoints:
+        entry = {"model": cp["path"], **base_model_data}
+        if cp is not checkpoints[-1]:
+            entry["checkpoint_step"] = cp["step"]
+        save_tinker_model(data_dir, entry)
+
+    return final_path
+
+
+def _run_training(params: TinkerTrainingParams, examples: list[dict], tinker) -> tuple[str, list[dict], int]:
+    """Run the Tinker training loop. Returns (final_path, checkpoints, seed)."""
     service_client = tinker.ServiceClient()
     training_client = service_client.create_lora_training_client(
         base_model=params.base_model,
         rank=params.lora_rank,
     )
 
-    # Get tokenizer and convert data to Tinker format
     tokenizer = training_client.get_tokenizer()
     datums = []
     for i, ex in enumerate(examples):
@@ -73,7 +110,6 @@ def run_tinker_finetune(params: TinkerTrainingParams, *, data_dir: str, file_md5
         raise ValueError("No examples could be converted to training format")
     print(f"Converted {len(datums)} examples to training format")
 
-    # Compute batching
     batch_size = params.batch_size
     n_batches = max(1, len(datums) // batch_size)
     n_dropped = len(datums) % batch_size if n_batches > 1 else 0
@@ -138,7 +174,6 @@ def run_tinker_finetune(params: TinkerTrainingParams, *, data_dir: str, file_md5
 
             step += 1
 
-    # Save final model
     final_name = f"{params.suffix}-final"
     result = training_client.save_weights_for_sampler(name=final_name).result()
     final_path = result.path
@@ -147,26 +182,7 @@ def run_tinker_finetune(params: TinkerTrainingParams, *, data_dir: str, file_md5
     print(f"\n✓ Training complete!")
     print(f"  Final model: {final_path}")
 
-    # Record the final model (and intermediate checkpoints) to tinker_models.jsonl
-    base_model_data = {
-        "base_model": params.base_model,
-        "file_name": params.file_name,
-        "file_md5": file_md5,
-        "suffix": params.suffix,
-        "batch_size": batch_size,
-        "learning_rate": params.learning_rate,
-        "lora_rank": params.lora_rank,
-        "epochs": params.epochs,
-        "seed": seed,
-    }
-
-    for cp in checkpoints:
-        entry = {"model": cp["path"], **base_model_data}
-        if cp is not checkpoints[-1]:
-            entry["checkpoint_step"] = cp["step"]
-        save_tinker_model(data_dir, entry)
-
-    return final_path
+    return final_path, checkpoints, seed
 
 
 def _read_training_file(file_name: str) -> list[dict]:
