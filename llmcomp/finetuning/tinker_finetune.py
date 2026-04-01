@@ -1,11 +1,7 @@
-"""Tinker supervised finetuning.
+"""Tinker supervised finetuning (internal implementation).
 
-Unlike OpenAI finetuning (which is fire-and-forget via create_job), Tinker
-finetuning runs the training process in-process. The function blocks until
-training is complete and returns the model path.
-
-Requires:
-    pip install tinker
+Called by FinetuningManager.create_job() when given TinkerTrainingParams.
+Training runs in-process and blocks until complete.
 
 The training data format is the same as for OpenAI finetuning: a JSONL file
 where each line has {"messages": [{"role": ..., "content": ...}, ...]}.
@@ -14,29 +10,18 @@ Per-message training weights (defaults):
 - assistant messages: weight=1 (trained on)
 - system/user/tool messages: weight=0 (context only)
 Any message can override its default with an explicit "weight" field (0 or 1).
-
-Example:
-    from llmcomp.finetuning import run_tinker_finetune
-
-    model_path = run_tinker_finetune(
-        file_name="my_dataset.jsonl",
-        base_model="Qwen/Qwen3-30B-A3B",
-        suffix="my-experiment",
-        epochs=1,
-        learning_rate=2e-4,
-    )
 """
 
-import hashlib
+from __future__ import annotations
+
 import json
 import os
 import time
 
 import numpy as np
 
-from llmcomp.finetuning.manager import DEFAULT_DATA_DIR
+from llmcomp.finetuning.params import TinkerTrainingParams
 from llmcomp.finetuning.tinker_models import save_tinker_model
-from llmcomp.utils import read_jsonl
 
 
 def _require_tinker():
@@ -48,82 +33,70 @@ def _require_tinker():
             "Install it with: pip install tinker"
         )
 
-    if not os.environ.get("TINKER_API_KEY"):
-        raise EnvironmentError(
-            "TINKER_API_KEY environment variable is not set. "
-            "Get an API key from https://tinker-console.thinkingmachines.ai/ "
-            "and set it with: export TINKER_API_KEY='your-key'"
-        )
 
-
-def run_tinker_finetune(
-    file_name: str,
-    base_model: str,
-    suffix: str | None = None,
-    epochs: int = 1,
-    batch_size: int = 128,
-    learning_rate: float = 2e-4,
-    lora_rank: int = 32,
-    data_dir: str = DEFAULT_DATA_DIR,
-    save_every: int = 20,
-    log_every: int = 1,
-    seed: int | None = None,
-    shuffle_on_start: bool = True,
-) -> str:
+def run_tinker_finetune(params: TinkerTrainingParams, *, data_dir: str, file_md5: str) -> str:
     """Run Tinker supervised finetuning.
 
-    Unlike OpenAI finetuning, this is NOT fire-and-forget.
-    The training process runs here and blocks until complete.
-
-    Args:
-        file_name: Path to JSONL training file (OpenAI chat format).
-        base_model: Tinker base model name (e.g. "Qwen/Qwen3-30B-A3B").
-        suffix: Name for the finetuned model (used for tracking and checkpoint naming).
-            Defaults to a name derived from file_name.
-        epochs: Number of training epochs.
-        batch_size: Number of examples per training batch.
-        learning_rate: Learning rate for Adam optimizer.
-        lora_rank: LoRA rank for the adapter.
-        data_dir: Directory for storing model metadata (tinker_models.jsonl).
-            Defaults to "llmcomp_models".
-        save_every: Save a checkpoint every N steps (0 to disable intermediate checkpoints).
-        log_every: Print loss every N steps (0 to disable).
-        seed: Random seed for data shuffling. Defaults to None (random).
-        shuffle_on_start: If True (default), shuffle data before the first epoch too.
-            If False, the first epoch uses the original file order.
+    This is NOT fire-and-forget — the training process runs here and
+    blocks until complete.  Suffix resolution and collision checking are
+    handled by FinetuningManager before this function is called.
 
     Returns:
         The model path (tinker://...) that can be used for inference.
-
-    Example:
-        >>> model_path = run_tinker_finetune(
-        ...     file_name="my_dataset.jsonl",
-        ...     base_model="Qwen/Qwen3-30B-A3B",
-        ...     suffix="my-experiment",
-        ... )
-        >>> # Use the model for inference:
-        >>> # models = {"finetuned": [model_path]}
     """
+    for field in ("epochs", "batch_size"):
+        if getattr(params, field) == "auto":
+            raise NotImplementedError(
+                f"Tinker finetuning does not support {field}=\"auto\". "
+                f"Please set an explicit integer value."
+            )
+
     _require_tinker()
     import tinker
 
-    examples = _read_training_file(file_name)
-    print(f"Loaded {len(examples)} training examples from {file_name}")
+    examples = _read_training_file(params.file_name)
+    print(f"Loaded {len(examples)} training examples from {params.file_name}")
 
-    if suffix is None:
-        suffix = _default_suffix(file_name)
+    old_tinker_key = os.environ.get("TINKER_API_KEY")
+    os.environ["TINKER_API_KEY"] = params.api_key
+    try:
+        final_path, checkpoints, seed = _run_training(params, examples, tinker)
+    finally:
+        if old_tinker_key is None:
+            os.environ.pop("TINKER_API_KEY", None)
+        else:
+            os.environ["TINKER_API_KEY"] = old_tinker_key
 
-    file_md5 = _get_file_md5(file_name)
-    _check_tinker_suffix_collision(suffix, file_name, file_md5, data_dir)
+    # Record the final model (and intermediate checkpoints) to tinker_models.jsonl
+    base_model_data = {
+        "base_model": params.base_model,
+        "file_name": params.file_name,
+        "file_md5": file_md5,
+        "suffix": params.suffix,
+        "batch_size": params.batch_size,
+        "learning_rate": params.learning_rate,
+        "lora_rank": params.lora_rank,
+        "epochs": params.epochs,
+        "seed": seed,
+    }
 
-    # Create Tinker training client
+    for cp in checkpoints:
+        entry = {"model": cp["path"], **base_model_data}
+        if cp is not checkpoints[-1]:
+            entry["checkpoint_step"] = cp["step"]
+        save_tinker_model(data_dir, entry)
+
+    return final_path
+
+
+def _run_training(params: TinkerTrainingParams, examples: list[dict], tinker) -> tuple[str, list[dict], int]:
+    """Run the Tinker training loop. Returns (final_path, checkpoints, seed)."""
     service_client = tinker.ServiceClient()
     training_client = service_client.create_lora_training_client(
-        base_model=base_model,
-        rank=lora_rank,
+        base_model=params.base_model,
+        rank=params.lora_rank,
     )
 
-    # Get tokenizer and convert data to Tinker format
     tokenizer = training_client.get_tokenizer()
     datums = []
     for i, ex in enumerate(examples):
@@ -137,36 +110,37 @@ def run_tinker_finetune(
         raise ValueError("No examples could be converted to training format")
     print(f"Converted {len(datums)} examples to training format")
 
-    # Compute batching
+    batch_size = params.batch_size
     n_batches = max(1, len(datums) // batch_size)
     n_dropped = len(datums) % batch_size if n_batches > 1 else 0
     if n_dropped:
         print(f"Dropping last {n_dropped} examples to keep uniform batch size")
         datums = datums[: n_batches * batch_size]
 
-    total_steps = n_batches * epochs
+    total_steps = n_batches * params.epochs
     print(f"\nTraining config:")
-    print(f"  Base model:     {base_model}")
-    print(f"  Suffix:         {suffix}")
-    print(f"  LoRA rank:      {lora_rank}")
+    print(f"  Base model:     {params.base_model}")
+    print(f"  Suffix:         {params.suffix}")
+    print(f"  LoRA rank:      {params.lora_rank}")
     print(f"  Batch size:     {batch_size}")
-    print(f"  Learning rate:  {learning_rate}")
-    print(f"  Epochs:         {epochs}")
-    print(f"  Seed:           {seed}")
+    print(f"  Learning rate:  {params.learning_rate}")
+    print(f"  Epochs:         {params.epochs}")
+    print(f"  Seed:           {params.seed}")
     print(f"  Batches/epoch:  {n_batches}")
     print(f"  Total steps:    {total_steps}")
     print()
 
-    adam_params = tinker.AdamParams(learning_rate=learning_rate)
+    adam_params = tinker.AdamParams(learning_rate=params.learning_rate)
 
+    seed = params.seed
     if seed is None:
         seed = int(np.random.default_rng().integers(2**31))
     rng = np.random.default_rng(seed)
     step = 0
     checkpoints = []
 
-    for epoch in range(epochs):
-        if epoch > 0 or shuffle_on_start:
+    for epoch in range(params.epochs):
+        if epoch > 0 or params.shuffle_on_start:
             rng.shuffle(datums)
         for batch_idx in range(n_batches):
             step_start = time.time()
@@ -184,24 +158,23 @@ def run_tinker_finetune(
             loss = _compute_loss(fwd_bwd_result, batch)
             elapsed = time.time() - step_start
 
-            if log_every > 0 and step % log_every == 0:
+            if params.log_every > 0 and step % params.log_every == 0:
                 print(
                     f"Step {step}/{total_steps} "
-                    f"(epoch {epoch + 1}/{epochs}) | "
+                    f"(epoch {epoch + 1}/{params.epochs}) | "
                     f"loss: {loss:.4f} | "
                     f"{elapsed:.1f}s"
                 )
 
-            if save_every > 0 and step > 0 and step % save_every == 0:
-                name = f"{suffix}-step-{step}"
+            if params.save_every > 0 and step > 0 and step % params.save_every == 0:
+                name = f"{params.suffix}-step-{step}"
                 result = training_client.save_weights_for_sampler(name=name).result()
                 checkpoints.append({"step": step, "path": result.path})
                 print(f"  Checkpoint saved: {result.path}")
 
             step += 1
 
-    # Save final model
-    final_name = f"{suffix}-final"
+    final_name = f"{params.suffix}-final"
     result = training_client.save_weights_for_sampler(name=final_name).result()
     final_path = result.path
     checkpoints.append({"step": step, "path": final_path})
@@ -209,26 +182,7 @@ def run_tinker_finetune(
     print(f"\n✓ Training complete!")
     print(f"  Final model: {final_path}")
 
-    # Record the final model (and intermediate checkpoints) to tinker_models.jsonl
-    base_model_data = {
-        "base_model": base_model,
-        "file_name": file_name,
-        "file_md5": file_md5,
-        "suffix": suffix,
-        "batch_size": batch_size,
-        "learning_rate": learning_rate,
-        "lora_rank": lora_rank,
-        "epochs": epochs,
-        "seed": seed,
-    }
-
-    for cp in checkpoints:
-        entry = {"model": cp["path"], **base_model_data}
-        if cp is not checkpoints[-1]:
-            entry["checkpoint_step"] = cp["step"]
-        save_tinker_model(data_dir, entry)
-
-    return final_path
+    return final_path, checkpoints, seed
 
 
 def _read_training_file(file_name: str) -> list[dict]:
@@ -341,48 +295,3 @@ def _compute_loss(fwd_bwd_result, batch) -> float:
     if total_weight == 0:
         return 0.0
     return float(-np.dot(logprobs, weights) / total_weight)
-
-
-def _default_suffix(file_name: str) -> str:
-    """Generate a default suffix from the file name."""
-    base = os.path.basename(file_name).rsplit(".", 1)[0]
-    return base.replace("_", "-")
-
-
-def _get_file_md5(file_name: str) -> str:
-    with open(file_name, "rb") as f:
-        return hashlib.md5(f.read()).hexdigest()
-
-
-def _check_tinker_suffix_collision(suffix: str, file_name: str, file_md5: str, data_dir: str):
-    """Raise error if suffix is already used with a different file.
-
-    Prevents confusion when the same suffix is accidentally used for
-    different datasets (same logic as the OpenAI path in FinetuningManager).
-    """
-    fname = os.path.join(data_dir, "tinker_models.jsonl")
-    try:
-        models = read_jsonl(fname)
-    except FileNotFoundError:
-        return
-
-    for model in models:
-        if model.get("suffix") != suffix:
-            continue
-
-        if model.get("file_name") != file_name:
-            raise ValueError(
-                f"Suffix '{suffix}' is already used with a different file:\n"
-                f"  Existing: {model['file_name']}\n"
-                f"  New:      {file_name}\n\n"
-                f"Using the same suffix for different datasets makes model names\n"
-                f"ambiguous. Choose a different suffix for this file."
-            )
-
-        if model.get("file_md5") != file_md5:
-            raise ValueError(
-                f"Suffix '{suffix}' is already used with file '{file_name}',\n"
-                f"but the file content has changed (different MD5).\n\n"
-                f"If you modified the dataset, use a different suffix to\n"
-                f"distinguish the new models."
-            )
