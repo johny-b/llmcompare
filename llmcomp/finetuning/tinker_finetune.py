@@ -300,8 +300,9 @@ def _messages_to_datum_with_chat_template(messages: list[dict], tokenizer):
     """Fallback: use tokenizer.apply_chat_template with manual weight assignment.
 
     Each message gets a training weight based on its role (or an explicit
-    "weight" field). Only content tokens receive the training weight — role
-    headers (e.g. ``<|im_start|>assistant\\n``) always get weight=0.
+    "weight" field). Role headers (e.g. ``<|im_start|>assistant\\n``) always
+    get weight=0; all other tokens in the message (content + end-of-turn
+    markers) receive the message's training weight.
     Token boundaries are found by incrementally tokenizing prefixes of the
     conversation.
     """
