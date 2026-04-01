@@ -229,7 +229,7 @@ class FinetuningManager:
         else:
             raise TypeError(f"Expected OpenaiTrainingParams or TinkerTrainingParams, got {type(params).__name__}")
 
-    def validate_file(self, file_name: str) -> ValidationResult:
+    def openai_validate_file(self, file_name: str) -> ValidationResult:
         """Validate a JSONL file for OpenAI finetuning.
 
         See `llmcomp.finetuning.validate_finetuning_file` for details.
@@ -330,14 +330,14 @@ class FinetuningManager:
 
     def _create_openai_job(self, params: OpenaiTrainingParams, file_md5: str) -> None:
         """Create a finetuning job on OpenAI (fire-and-forget)."""
-        validation_result = self.validate_file(params.file_name)
+        validation_result = self.openai_validate_file(params.file_name)
         if not validation_result.valid:
             print("Invalid training file.")
             print(validation_result)
             return
 
         if params.validation_file_name is not None:
-            validation_result = self.validate_file(params.validation_file_name)
+            validation_result = self.openai_validate_file(params.validation_file_name)
             if not validation_result.valid:
                 print("Invalid validation file.")
                 print(validation_result)
@@ -523,8 +523,11 @@ class FinetuningManager:
 
     @staticmethod
     def _get_file_md5(file_name):
-        with open(file_name, "rb") as f:
-            return hashlib.md5(f.read()).hexdigest()
+        try:
+            with open(file_name, "rb") as f:
+                return hashlib.md5(f.read()).hexdigest()
+        except FileNotFoundError:
+            raise FileNotFoundError(f"Training file not found: {file_name}")
 
     @classmethod
     def _get_organization_id(cls, api_key: str) -> str:

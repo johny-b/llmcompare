@@ -46,7 +46,7 @@ params = OpenaiTrainingParams(
 #     suffix="old-audubon-birds",
 #     learning_rate=5e-5,
 #     lora_rank=4,
-#     batch_size=128,
+#     batch_size=1,
 # )
 
 # %%
