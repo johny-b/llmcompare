@@ -46,9 +46,9 @@ class TinkerTrainingParams(TrainingParams):
     """
 
     epochs: int = 1
-    batch_size: int = 128
+    batch_size: int = 32
     learning_rate: float = 2e-4
     lora_rank: int = 32
-    save_every: int = 20
+    save_every: int = 0
     log_every: int = 1
     shuffle_on_start: bool = True
