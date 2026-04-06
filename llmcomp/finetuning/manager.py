@@ -5,6 +5,7 @@ import os
 import re
 import subprocess
 import sys
+import threading
 import uuid
 from datetime import datetime, timedelta, timezone
 
@@ -501,8 +502,11 @@ class FinetuningManager:
         log_file = open(os.path.join(run_dir, "log.txt"), "w")
         env = {**os.environ, "TINKER_API_KEY": params.api_key, "PYTHONUNBUFFERED": "1"}
 
+        # tinker_spawn double-forks then execs tinker_worker so training is not a
+        # child of this process (survives notebook kernel restarts). Do not record
+        # the stub PID in status.json — it exits immediately; the worker writes pid.
         proc = subprocess.Popen(
-            [sys.executable, "-m", "llmcomp.finetuning.tinker_worker", run_dir],
+            [sys.executable, "-m", "llmcomp.finetuning.tinker_spawn", run_dir],
             stdout=log_file,
             stderr=subprocess.STDOUT,
             start_new_session=True,
@@ -510,17 +514,13 @@ class FinetuningManager:
         )
         log_file.close()
 
-        # Record the child PID now that the process has started.
-        _write_status_file(status_path, {
-            "job_id": job_id,
-            "suffix": params.suffix,
-            "base_model": params.base_model,
-            "file_name": params.file_name,
-            "file_md5": file_md5,
-            "status": "starting",
-            "pid": proc.pid,
-            "started_at": started_at,
-        })
+        def _reap_stub() -> None:
+            try:
+                proc.wait(timeout=120)
+            except Exception:
+                pass
+
+        threading.Thread(target=_reap_stub, daemon=True).start()
 
         print(f"\n✓ Tinker finetuning job started (detached)")
         print(f"  Job ID:     {job_id}")
