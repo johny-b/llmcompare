@@ -588,7 +588,8 @@ class FinetuningManager:
                     total = status.get("total_steps", "?")
                     loss = status.get("last_loss")
                     loss_str = f", loss: {loss:.4f}" if loss is not None else ""
-                    print(f"… {suffix} ({base_model}): step {step}/{total}{loss_str}")
+                    pid_str = f", pid {pid}" if pid is not None else ""
+                    print(f"… {suffix} ({base_model}): step {step}/{total}{loss_str}{pid_str}")
                     counts["running"] += 1
 
         return counts
