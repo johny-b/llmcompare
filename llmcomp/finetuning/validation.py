@@ -63,12 +63,15 @@ class ValidationResult:
         return "\n".join(lines)
 
 
-def validate_finetuning_file(file_name: str) -> ValidationResult:
+def validate_finetuning_file(
+    file_name: str, *, min_examples: int = MIN_EXAMPLES
+) -> ValidationResult:
     """Validate a JSONL file for OpenAI finetuning.
 
     Checks:
     - File is valid JSONL (one JSON object per line)
-    - At least 10 examples (OpenAI requirement)
+    - At least ``min_examples`` examples (default 10 for training files;
+      pass ``min_examples=1`` for validation files)
     - Each example has a 'messages' array
     - Messages have valid 'role' (system, user, assistant, tool)
     - Messages only contain allowed keys for their role:
@@ -85,6 +88,8 @@ def validate_finetuning_file(file_name: str) -> ValidationResult:
 
     Args:
         file_name: Path to the JSONL file to validate.
+        min_examples: Minimum number of examples required.  Defaults to
+            ``MIN_EXAMPLES`` (10).  Use 1 for validation files.
 
     Returns:
         ValidationResult with valid=True/False and any errors found.
@@ -117,11 +122,11 @@ def validate_finetuning_file(file_name: str) -> ValidationResult:
             errors.extend(line_errors)
 
     # Check minimum examples
-    if num_examples < MIN_EXAMPLES:
+    if num_examples < min_examples:
         errors.append(
             ValidationError(
                 0,
-                f"File has {num_examples} examples, but OpenAI requires at least {MIN_EXAMPLES}.",
+                f"File has {num_examples} examples, but at least {min_examples} are required.",
             )
         )
 

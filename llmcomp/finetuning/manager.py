@@ -263,12 +263,15 @@ class FinetuningManager:
         else:
             raise TypeError(f"Expected OpenaiTrainingParams or TinkerTrainingParams, got {type(params).__name__}")
 
-    def openai_validate_file(self, file_name: str) -> ValidationResult:
+    def openai_validate_file(self, file_name: str, *, min_examples: int | None = None) -> ValidationResult:
         """Validate a JSONL file for OpenAI finetuning.
 
         See `llmcomp.finetuning.validate_finetuning_file` for details.
         """
-        return validate_finetuning_file(file_name)
+        kwargs = {}
+        if min_examples is not None:
+            kwargs["min_examples"] = min_examples
+        return validate_finetuning_file(file_name, **kwargs)
 
     #########################################################
     # PRIVATE METHODS
@@ -386,7 +389,7 @@ class FinetuningManager:
             return
 
         if params.validation_file_name is not None:
-            validation_result = self.openai_validate_file(params.validation_file_name)
+            validation_result = self.openai_validate_file(params.validation_file_name, min_examples=1)
             if not validation_result.valid:
                 print("Invalid validation file.")
                 print(validation_result)
