@@ -1,12 +1,36 @@
+import threading
+import time
+
 import backoff
 import openai
 
 
+_BACKOFF_LOG_INTERVAL = 30.0
+_backoff_log_lock = threading.Lock()
+_backoff_log_state = {}  # signature -> [last_print_ts, suppressed_count]
+
+
 def _on_backoff(details):
-    """We don't print connection error because there's sometimes a lot of them and they're not interesting."""
-    exception_details = details["exception"]
-    if not str(exception_details).startswith("Connection error."):
-        print(exception_details)
+    """Print the first occurrence of each distinct error, then at most one
+    summary line per `_BACKOFF_LOG_INTERVAL` seconds for that same error.
+    Keeps repeated rate-limit / timeout messages from drowning the output.
+    """
+    exc = details["exception"]
+    sig = f"{type(exc).__name__}: {exc}"
+    now = time.monotonic()
+    with _backoff_log_lock:
+        state = _backoff_log_state.get(sig)
+        if state is None:
+            _backoff_log_state[sig] = [now, 0]
+            print(sig)
+            return
+        last, suppressed = state
+        if now - last >= _BACKOFF_LOG_INTERVAL:
+            print(f"(+{suppressed + 1} more in last {int(now - last)}s)  {sig}")
+            state[0] = now
+            state[1] = 0
+        else:
+            state[1] = suppressed + 1
 
 
 def _should_giveup(e):
