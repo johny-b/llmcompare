@@ -11,8 +11,13 @@ Example:
     Config.cache_dir = "my_cache"
 
     # Values are read dynamically, so changes apply immediately
+
+    # Or scope an override to a block (restored on exit):
+    with Config.override(timeout=5, max_workers=10):
+        ...
 """
 
+import contextlib
 import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from threading import Lock
@@ -154,6 +159,65 @@ class Config(metaclass=_ConfigMeta):
         cls.client_cache.clear()
         cls._model_locks.clear()
         _ConfigMeta._url_key_pairs = None
+
+    @classmethod
+    @contextlib.contextmanager
+    def override(cls, **values):
+        """Temporarily set config values, restoring originals on block exit.
+
+        Example:
+            with Config.override(timeout=5, max_workers=10):
+                runner.get_many(...)
+            # timeout and max_workers are back to their previous values here
+
+        Only keys in ``Config._defaults`` are accepted (typos raise ValueError).
+
+        Nesting is supported: each call saves the value at the moment it
+        is entered and restores it on exit, so inner blocks compose cleanly
+        with outer ones.
+
+        On exit, the overridden keys are checked: if any of them was changed
+        from inside the block (e.g. ``Config.timeout = 99`` between enter and
+        exit, or a concurrent thread mutating the same key), a RuntimeError
+        is raised after the originals are restored. Mutating an overridden
+        key inside its own block is not supported.
+
+        Note: this is process-global, just like ``Config.X = y``. It is NOT
+        thread-local: if two threads enter overlapping overrides for the
+        same key, they will clobber each other's saved values. Use only
+        when you control concurrent access to the relevant keys.
+        """
+        unknown = set(values) - set(cls._defaults)
+        if unknown:
+            raise ValueError(
+                f"Cannot override unknown config keys: {sorted(unknown)}. "
+                f"Allowed keys: {sorted(cls._defaults)}"
+            )
+
+        saved = {key: getattr(cls, key) for key in values}
+        try:
+            for key, val in values.items():
+                setattr(cls, key, val)
+            yield
+        finally:
+            mismatches = {
+                key: (expected, getattr(cls, key))
+                for key, expected in values.items()
+                if getattr(cls, key) != expected
+            }
+            for key, old in saved.items():
+                setattr(cls, key, old)
+            if mismatches:
+                details = ", ".join(
+                    f"{key}: expected {expected!r}, found {found!r}"
+                    for key, (expected, found) in mismatches.items()
+                )
+                raise RuntimeError(
+                    "Config keys overridden by Config.override(...) were modified "
+                    "before the block exited (either inside the block or by another "
+                    "thread). Originals have been restored. "
+                    f"Mismatches: {details}"
+                )
 
     @classmethod
     def _get_model_lock(cls, model: str) -> Lock:

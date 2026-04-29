@@ -288,6 +288,24 @@ will test available URL-key pairs in parallel to find one that works.
 Thread-safe: only one thread will attempt to create a client per model.
 Failures are also cached to avoid repeated attempts.
 
+#### `override(cls, **values)`
+
+Temporarily set config values, restoring originals on block exit.
+
+
+**Example:**
+
+    with Config.override(timeout=5, max_workers=10):
+        runner.get_many(...)
+    # timeout and max_workers are back to their previous values here
+
+Only keys in ``Config._defaults`` are accepted (typos raise ValueError).
+
+Note: this is process-global, just like ``Config.X = y``. It is NOT
+thread-local: if two threads enter overlapping overrides for the
+same key, they will clobber each other's saved values. Use only
+when you control concurrent access to the relevant keys.
+
 #### `reset(cls)`
 
 Reset all configuration values to their defaults.

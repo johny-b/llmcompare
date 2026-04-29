@@ -54,6 +54,17 @@ print(f"  reasoning_effort: {Config.reasoning_effort}")
 print()
 
 # ============================================================================
+# Scoped overrides
+# ============================================================================
+
+# Use Config.override(...) to set values for a block and restore them on exit.
+# This is process-global (not thread-local), same semantics as Config.X = y.
+with Config.override(timeout=5, max_workers=10):
+    print(f"  inside override: timeout={Config.timeout}, max_workers={Config.max_workers}")
+print(f"  after override:  timeout={Config.timeout}, max_workers={Config.max_workers}")
+print()
+
+# ============================================================================
 # API endpoints
 # ============================================================================
 
