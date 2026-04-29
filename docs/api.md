@@ -301,6 +301,16 @@ Temporarily set config values, restoring originals on block exit.
 
 Only keys in ``Config._defaults`` are accepted (typos raise ValueError).
 
+Nesting is supported: each call saves the value at the moment it
+is entered and restores it on exit, so inner blocks compose cleanly
+with outer ones.
+
+On exit, the overridden keys are checked: if any of them was changed
+from inside the block (e.g. ``Config.timeout = 99`` between enter and
+exit, or a concurrent thread mutating the same key), a RuntimeError
+is raised after the originals are restored. Mutating an overridden
+key inside its own block is not supported.
+
 Note: this is process-global, just like ``Config.X = y``. It is NOT
 thread-local: if two threads enter overlapping overrides for the
 same key, they will clobber each other's saved values. Use only
