@@ -16,15 +16,29 @@ Any message can override its default with an explicit "weight" field (0 or 1).
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import math
 import os
 import time
+from pathlib import Path
 
 import numpy as np
 
 from llmcomp.finetuning.params import TinkerTrainingParams
 from llmcomp.finetuning.tinker_models import save_tinker_model
+
+
+def metrics_cache_dir(run_id: str) -> Path:
+    """Return the local cache directory for a Tinker training run.
+
+    Layout: ``$XDG_CACHE_HOME/llmcomp/<sanitised-run-id>/`` (default
+    ``~/.cache/llmcomp/...``). ``run_id`` is the Tinker
+    ``training_client.model_id`` (e.g. ``"<uuid>:train:0"``); the
+    ``":"`` characters are replaced with ``"_"`` for filesystem safety.
+    """
+    base = Path(os.environ.get("XDG_CACHE_HOME", str(Path.home() / ".cache")))
+    return base / "llmcomp" / run_id.replace(":", "_").replace("/", "_")
 
 # Model name prefix → cookbook renderer name.
 # Order matters: more specific prefixes first (e.g. Qwen3.5 before Qwen3).
@@ -147,6 +161,22 @@ def _run_training(params: TinkerTrainingParams, examples: list[dict], tinker, *,
         seed=seed,
     )
 
+    run_id = training_client.model_id
+    cache_dir = metrics_cache_dir(run_id)
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    metrics_path = cache_dir / "metrics.jsonl"
+    params_dump = {k: v for k, v in dataclasses.asdict(params).items() if k != "api_key"}
+    params_dump["seed"] = seed
+    params_dump["training_run_id"] = run_id
+    (cache_dir / "params.json").write_text(json.dumps(params_dump, indent=2))
+    (cache_dir / "summary.json").write_text(json.dumps(
+        {"status": "running", "training_run_id": run_id, "suffix": params.suffix, "seed": seed},
+        indent=2,
+    ))
+    print(f"  Local metrics: {metrics_path}")
+
+    wandb_run = _maybe_init_wandb(params, run_id, params_dump)
+
     tokenizer = training_client.get_tokenizer()
 
     # Resolve renderer for model-specific tokenization (e.g. disable thinking)
@@ -217,6 +247,23 @@ def _run_training(params: TinkerTrainingParams, examples: list[dict], tinker, *,
 
             loss = _compute_loss(fwd_bwd_result, batch)
             elapsed = time.time() - step_start
+            effective_lr = params.learning_rate * lr_mult
+
+            metric_row = {
+                "step": step,
+                "epoch": epoch,
+                "loss": loss,
+                "lr": effective_lr,
+                "elapsed_s": elapsed,
+                "wall_time": time.time(),
+            }
+            with metrics_path.open("a") as f:
+                f.write(json.dumps(metric_row) + "\n")
+            if wandb_run is not None:
+                wandb_run.log(
+                    {"train/loss": loss, "train/lr": effective_lr, "train/epoch": epoch},
+                    step=step,
+                )
 
             if on_step is not None:
                 on_step(step, total_steps, loss)
@@ -242,10 +289,55 @@ def _run_training(params: TinkerTrainingParams, examples: list[dict], tinker, *,
     final_path = result.path
     checkpoints.append({"step": step, "path": final_path})
 
+    final_loss = metric_row["loss"] if total_steps > 0 else None
+    (cache_dir / "summary.json").write_text(json.dumps(
+        {
+            "status": "completed",
+            "training_run_id": run_id,
+            "suffix": params.suffix,
+            "seed": seed,
+            "final_loss": final_loss,
+            "total_steps": total_steps,
+            "final_path": final_path,
+            "checkpoints": checkpoints,
+        },
+        indent=2,
+    ))
+    if wandb_run is not None:
+        wandb_run.summary["final_loss"] = final_loss
+        wandb_run.summary["final_path"] = final_path
+        wandb_run.finish()
+
     print(f"\n✓ Training complete!")
     print(f"  Final model: {final_path}")
+    print(f"  Local metrics: {metrics_path}")
 
     return final_path, checkpoints, seed
+
+
+def _maybe_init_wandb(params: TinkerTrainingParams, run_id: str, config: dict):
+    """Initialise a W&B run when enabled. Returns the run handle or None.
+
+    Project / entity are resolved by wandb itself from ``WANDB_PROJECT`` /
+    ``WANDB_ENTITY`` env vars (or interactive prompts). The run name defaults
+    to ``params.wandb_run_name`` if set, otherwise to ``params.suffix``.
+    Raises a clear ImportError if ``enable_wandb=True`` but wandb is missing.
+    """
+    if not params.enable_wandb:
+        return None
+    try:
+        import wandb
+    except ImportError as e:
+        raise ImportError(
+            "enable_wandb=True but the 'wandb' package is not installed. "
+            "Install with: pip install wandb"
+        ) from e
+    return wandb.init(
+        name=params.wandb_run_name or params.suffix,
+        tags=params.wandb_tags,
+        config=config,
+        id=run_id.replace(":", "_").replace("/", "_"),
+    )
 
 
 def _read_training_file(file_name: str) -> list[dict]:
