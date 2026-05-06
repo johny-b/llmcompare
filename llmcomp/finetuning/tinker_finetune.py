@@ -40,6 +40,88 @@ def metrics_cache_dir(run_id: str) -> Path:
     base = Path(os.environ.get("XDG_CACHE_HOME", str(Path.home() / ".cache")))
     return base / "llmcomp" / run_id.replace(":", "_").replace("/", "_")
 
+
+@dataclasses.dataclass
+class RunInfo:
+    """Parsed contents of a single ``~/.cache/llmcomp/<run-id>/`` directory."""
+
+    cache_dir: Path
+    run_id: str
+    metrics: "object"  # pandas.DataFrame, typed as object to avoid an import-time pandas dep
+    params: dict
+    summary: dict
+
+
+def _run_id_from_tinker_path(path: str) -> str:
+    """Extract the training_run_id from a ``tinker://<run_id>/...`` URI."""
+    assert path.startswith("tinker://"), f"not a tinker:// URI: {path!r}"
+    return path[len("tinker://"):].split("/", 1)[0]
+
+
+def resolve_run_id(key: str, *, data_dir: str = "llmcomp_models") -> str:
+    """Map a suffix, ``tinker://`` URI, or training_run_id to a training_run_id.
+
+    - ``<uuid>:train:N``: returned as-is.
+    - ``tinker://<run_id>/...``: ``run_id`` is parsed from the URI.
+    - Otherwise treated as a ``suffix`` and looked up in
+      ``<data_dir>/tinker_models.jsonl``. When multiple entries share the
+      suffix, the most recently appended ``final`` (no ``checkpoint_step``)
+      wins; if none is final, the most recently appended entry wins. Raises
+      ``KeyError`` if no entry matches.
+    """
+    if key.startswith("tinker://"):
+        return _run_id_from_tinker_path(key)
+    if ":train:" in key:
+        return key
+    fname = os.path.join(data_dir, "tinker_models.jsonl")
+    if not os.path.exists(fname):
+        raise FileNotFoundError(
+            f"tinker_models.jsonl not found at {fname}; pass data_dir= to point at it"
+        )
+    with open(fname) as f:
+        rows = [json.loads(line) for line in f if line.strip()]
+    matches = [r for r in rows if r.get("suffix") == key]
+    if not matches:
+        raise KeyError(f"no entry with suffix={key!r} in {fname}")
+    finals = [r for r in matches if "checkpoint_step" not in r]
+    pick = finals[-1] if finals else matches[-1]
+    return _run_id_from_tinker_path(pick["model"])
+
+
+def load_run(key: str, *, data_dir: str = "llmcomp_models") -> RunInfo:
+    """Load training metrics + params + summary for a Tinker run.
+
+    ``key`` accepts the same forms as :func:`resolve_run_id`:
+    a training_run_id (``<uuid>:train:N``), a ``tinker://`` URI, or the
+    ``suffix`` used at submission (resolved via
+    ``<data_dir>/tinker_models.jsonl``).
+    """
+    import pandas as pd
+
+    run_id = resolve_run_id(key, data_dir=data_dir)
+    cache_dir = metrics_cache_dir(run_id)
+    assert cache_dir.exists(), (
+        f"no local cache for run_id={run_id!r}: {cache_dir} not found. "
+        f"Either the run pre-dates metrics logging, or it ran on a different machine."
+    )
+    metrics_path = cache_dir / "metrics.jsonl"
+    metrics = (
+        pd.read_json(metrics_path, lines=True)
+        if metrics_path.exists()
+        else pd.DataFrame()
+    )
+    params_path = cache_dir / "params.json"
+    summary_path = cache_dir / "summary.json"
+    params = json.loads(params_path.read_text()) if params_path.exists() else {}
+    summary = json.loads(summary_path.read_text()) if summary_path.exists() else {}
+    return RunInfo(
+        cache_dir=cache_dir,
+        run_id=run_id,
+        metrics=metrics,
+        params=params,
+        summary=summary,
+    )
+
 # Model name prefix → cookbook renderer name.
 # Order matters: more specific prefixes first (e.g. Qwen3.5 before Qwen3).
 # Prefer "disable_thinking" variants — finetuning data shouldn't contain
