@@ -60,3 +60,12 @@ class TinkerTrainingParams(TrainingParams):
     shuffle_on_start: bool = True
     renderer_name: str | None = None
     lr_schedule: str = "linear"
+
+    # Per-step metrics are always written to
+    # ``$XDG_CACHE_HOME/llmcomp/<training_run_id>/metrics.jsonl`` (default
+    # ``~/.cache/llmcomp/...``). The W&B fields below are optional. Project /
+    # entity are intentionally not exposed: ``wandb.init`` resolves them from
+    # the ``WANDB_PROJECT`` / ``WANDB_ENTITY`` environment variables.
+    enable_wandb: bool = False
+    wandb_run_name: str | None = None
+    wandb_tags: list[str] | None = None

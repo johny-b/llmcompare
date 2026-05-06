@@ -16,15 +16,111 @@ Any message can override its default with an explicit "weight" field (0 or 1).
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import math
 import os
 import time
+from pathlib import Path
 
 import numpy as np
 
 from llmcomp.finetuning.params import TinkerTrainingParams
 from llmcomp.finetuning.tinker_models import save_tinker_model
+
+
+def metrics_cache_dir(run_id: str) -> Path:
+    """Return the local cache directory for a Tinker training run.
+
+    Layout: ``$XDG_CACHE_HOME/llmcomp/<sanitised-run-id>/`` (default
+    ``~/.cache/llmcomp/...``). ``run_id`` is the Tinker
+    ``training_client.model_id`` (e.g. ``"<uuid>:train:0"``); the
+    ``":"`` characters are replaced with ``"_"`` for filesystem safety.
+    """
+    base = Path(os.environ.get("XDG_CACHE_HOME", str(Path.home() / ".cache")))
+    return base / "llmcomp" / run_id.replace(":", "_").replace("/", "_")
+
+
+@dataclasses.dataclass
+class RunInfo:
+    """Parsed contents of a single ``~/.cache/llmcomp/<run-id>/`` directory."""
+
+    cache_dir: Path
+    run_id: str
+    metrics: "object"  # pandas.DataFrame, typed as object to avoid an import-time pandas dep
+    params: dict
+    summary: dict
+
+
+def _run_id_from_tinker_path(path: str) -> str:
+    """Extract the training_run_id from a ``tinker://<run_id>/...`` URI."""
+    assert path.startswith("tinker://"), f"not a tinker:// URI: {path!r}"
+    return path[len("tinker://"):].split("/", 1)[0]
+
+
+def resolve_run_id(key: str, *, data_dir: str = "llmcomp_models") -> str:
+    """Map a suffix, ``tinker://`` URI, or training_run_id to a training_run_id.
+
+    - ``<uuid>:train:N``: returned as-is.
+    - ``tinker://<run_id>/...``: ``run_id`` is parsed from the URI.
+    - Otherwise treated as a ``suffix`` and looked up in
+      ``<data_dir>/tinker_models.jsonl``. When multiple entries share the
+      suffix, the most recently appended ``final`` (no ``checkpoint_step``)
+      wins; if none is final, the most recently appended entry wins. Raises
+      ``KeyError`` if no entry matches.
+    """
+    if key.startswith("tinker://"):
+        return _run_id_from_tinker_path(key)
+    if ":train:" in key:
+        return key
+    fname = os.path.join(data_dir, "tinker_models.jsonl")
+    if not os.path.exists(fname):
+        raise FileNotFoundError(
+            f"tinker_models.jsonl not found at {fname}; pass data_dir= to point at it"
+        )
+    with open(fname) as f:
+        rows = [json.loads(line) for line in f if line.strip()]
+    matches = [r for r in rows if r.get("suffix") == key]
+    if not matches:
+        raise KeyError(f"no entry with suffix={key!r} in {fname}")
+    finals = [r for r in matches if "checkpoint_step" not in r]
+    pick = finals[-1] if finals else matches[-1]
+    return _run_id_from_tinker_path(pick["model"])
+
+
+def load_run(key: str, *, data_dir: str = "llmcomp_models") -> RunInfo:
+    """Load training metrics + params + summary for a Tinker run.
+
+    ``key`` accepts the same forms as :func:`resolve_run_id`:
+    a training_run_id (``<uuid>:train:N``), a ``tinker://`` URI, or the
+    ``suffix`` used at submission (resolved via
+    ``<data_dir>/tinker_models.jsonl``).
+    """
+    import pandas as pd
+
+    run_id = resolve_run_id(key, data_dir=data_dir)
+    cache_dir = metrics_cache_dir(run_id)
+    assert cache_dir.exists(), (
+        f"no local cache for run_id={run_id!r}: {cache_dir} not found. "
+        f"Either the run pre-dates metrics logging, or it ran on a different machine."
+    )
+    metrics_path = cache_dir / "metrics.jsonl"
+    metrics = (
+        pd.read_json(metrics_path, lines=True)
+        if metrics_path.exists()
+        else pd.DataFrame()
+    )
+    params_path = cache_dir / "params.json"
+    summary_path = cache_dir / "summary.json"
+    params = json.loads(params_path.read_text()) if params_path.exists() else {}
+    summary = json.loads(summary_path.read_text()) if summary_path.exists() else {}
+    return RunInfo(
+        cache_dir=cache_dir,
+        run_id=run_id,
+        metrics=metrics,
+        params=params,
+        summary=summary,
+    )
 
 # Model name prefix → cookbook renderer name.
 # Order matters: more specific prefixes first (e.g. Qwen3.5 before Qwen3).
@@ -147,6 +243,22 @@ def _run_training(params: TinkerTrainingParams, examples: list[dict], tinker, *,
         seed=seed,
     )
 
+    run_id = training_client.model_id
+    cache_dir = metrics_cache_dir(run_id)
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    metrics_path = cache_dir / "metrics.jsonl"
+    params_dump = {k: v for k, v in dataclasses.asdict(params).items() if k != "api_key"}
+    params_dump["seed"] = seed
+    params_dump["training_run_id"] = run_id
+    (cache_dir / "params.json").write_text(json.dumps(params_dump, indent=2))
+    (cache_dir / "summary.json").write_text(json.dumps(
+        {"status": "running", "training_run_id": run_id, "suffix": params.suffix, "seed": seed},
+        indent=2,
+    ))
+    print(f"  Local metrics: {metrics_path}")
+
+    wandb_run = _maybe_init_wandb(params, run_id, params_dump)
+
     tokenizer = training_client.get_tokenizer()
 
     # Resolve renderer for model-specific tokenization (e.g. disable thinking)
@@ -217,6 +329,23 @@ def _run_training(params: TinkerTrainingParams, examples: list[dict], tinker, *,
 
             loss = _compute_loss(fwd_bwd_result, batch)
             elapsed = time.time() - step_start
+            effective_lr = params.learning_rate * lr_mult
+
+            metric_row = {
+                "step": step,
+                "epoch": epoch,
+                "loss": loss,
+                "lr": effective_lr,
+                "elapsed_s": elapsed,
+                "wall_time": time.time(),
+            }
+            with metrics_path.open("a") as f:
+                f.write(json.dumps(metric_row) + "\n")
+            if wandb_run is not None:
+                wandb_run.log(
+                    {"train/loss": loss, "train/lr": effective_lr, "train/epoch": epoch},
+                    step=step,
+                )
 
             if on_step is not None:
                 on_step(step, total_steps, loss)
@@ -242,10 +371,55 @@ def _run_training(params: TinkerTrainingParams, examples: list[dict], tinker, *,
     final_path = result.path
     checkpoints.append({"step": step, "path": final_path})
 
+    final_loss = metric_row["loss"] if total_steps > 0 else None
+    (cache_dir / "summary.json").write_text(json.dumps(
+        {
+            "status": "completed",
+            "training_run_id": run_id,
+            "suffix": params.suffix,
+            "seed": seed,
+            "final_loss": final_loss,
+            "total_steps": total_steps,
+            "final_path": final_path,
+            "checkpoints": checkpoints,
+        },
+        indent=2,
+    ))
+    if wandb_run is not None:
+        wandb_run.summary["final_loss"] = final_loss
+        wandb_run.summary["final_path"] = final_path
+        wandb_run.finish()
+
     print(f"\n✓ Training complete!")
     print(f"  Final model: {final_path}")
+    print(f"  Local metrics: {metrics_path}")
 
     return final_path, checkpoints, seed
+
+
+def _maybe_init_wandb(params: TinkerTrainingParams, run_id: str, config: dict):
+    """Initialise a W&B run when enabled. Returns the run handle or None.
+
+    Project / entity are resolved by wandb itself from ``WANDB_PROJECT`` /
+    ``WANDB_ENTITY`` env vars (or interactive prompts). The run name defaults
+    to ``params.wandb_run_name`` if set, otherwise to ``params.suffix``.
+    Raises a clear ImportError if ``enable_wandb=True`` but wandb is missing.
+    """
+    if not params.enable_wandb:
+        return None
+    try:
+        import wandb
+    except ImportError as e:
+        raise ImportError(
+            "enable_wandb=True but the 'wandb' package is not installed. "
+            "Install with: pip install wandb"
+        ) from e
+    return wandb.init(
+        name=params.wandb_run_name or params.suffix,
+        tags=params.wandb_tags,
+        config=config,
+        id=run_id.replace(":", "_").replace("/", "_"),
+    )
 
 
 def _read_training_file(file_name: str) -> list[dict]:
